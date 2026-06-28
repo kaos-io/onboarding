@@ -34,6 +34,8 @@ Verified against scratch project `wwwe-500812` on 2026-06-28 with `hashicorp/goo
   `wif_pool_id = acme-kaosid`. WIF pool `acme-kaosid` ACTIVE; the four `acme-*` SAs present.
 - Re-plan was a no-op (`-detailed-exitcode` = 0): idempotent without any import/wrapper script.
 - `terraform destroy` removed all 30 resources; project left clean.
-- `secret_data_wo` is a write-only attribute, never persisted to state; `grep -c "PRIVATE KEY"
-  terraform.tfstate` was `0`. The dedicated-app GSM write itself could not be live-exercised on
-  this scratch project (Secret Manager API requires billing, which the scratch project lacks).
+- Owned-app path verified on a billing-enabled project: `terraform apply` with a throwaway
+  `github_app_id`/`github_app_private_key` wrote the secret to GCP Secret Manager (secret
+  `acme-github-provider-credentials`, version `1` ENABLED), while `grep -c "PRIVATE KEY"
+  terraform.tfstate` was `0` — `secret_data_wo` is write-only, so the key reached GSM but is
+  absent from Terraform state. Destroyed clean afterward.
