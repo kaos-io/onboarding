@@ -29,13 +29,25 @@ locals {
     "roles/storage.admin",
   ]
 
-  # Project APIs the identity plane needs. Always enabled; Secret Manager is added
-  # only on the owned-app path (see google_project_service.secretmanager).
+  # Project APIs enabled for the KAOS control plane. Always enabled; Secret Manager is
+  # added only on the owned-app path (see google_project_service.secretmanager).
+  #   - identity/federation: used by THIS module to create the WIF identity plane.
+  #   - provisioning: used LATER by the operator's Crossplane providers to build the KubeOrg
+  #     network (compute, dns) and the KubePool GKE cluster (container, servicenetworking).
+  # Enabling them here prepares a fresh project end-to-end with no manual step and no script.
+  # No resource in this module consumes the provisioning APIs, so enabling them never blocks
+  # or fails this apply (the operator uses them in a later, separate reconcile).
   required_apis = [
+    # identity / federation (used by this module)
     "iam.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "iamcredentials.googleapis.com",
     "sts.googleapis.com",
+    # provisioning (used by the operator / Crossplane after onboarding)
+    "compute.googleapis.com",
+    "dns.googleapis.com",
+    "container.googleapis.com",
+    "servicenetworking.googleapis.com",
   ]
 }
 

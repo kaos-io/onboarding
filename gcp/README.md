@@ -6,11 +6,15 @@ Run once per KubeOrg, in your GCP project, by an IAM-admin, before creating the 
 - A GCP project with a **linked billing account**.
 - Run by a principal with `serviceusage.services.enable` plus the onboarding admin roles
   (or `roles/owner` for the onboarding run).
-- The module enables the required APIs for you. If your org pre-provisions APIs via policy or
-  pipeline, enable them yourself first:
+- The module enables every API the platform needs for you — both the **identity/federation**
+  APIs it uses directly and the **provisioning** APIs the operator/Crossplane use afterward to
+  build the KubeOrg network and KubePool cluster (so a fresh project works end-to-end). If your
+  org pre-provisions APIs via policy or pipeline, enable them yourself first:
   ```bash
-  gcloud services enable iam.googleapis.com cloudresourcemanager.googleapis.com \
-    iamcredentials.googleapis.com sts.googleapis.com secretmanager.googleapis.com \
+  gcloud services enable \
+    iam.googleapis.com cloudresourcemanager.googleapis.com iamcredentials.googleapis.com \
+    sts.googleapis.com secretmanager.googleapis.com \
+    compute.googleapis.com dns.googleapis.com container.googleapis.com servicenetworking.googleapis.com \
     --project <PROJECT>
   ```
 
