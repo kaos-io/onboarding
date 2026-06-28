@@ -28,6 +28,29 @@ locals {
     "roles/dns.admin",
     "roles/storage.admin",
   ]
+
+  # Project APIs the identity plane needs. Always enabled; Secret Manager is added
+  # only on the owned-app path (see google_project_service.secretmanager).
+  required_apis = [
+    "iam.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
+    "iamcredentials.googleapis.com",
+    "sts.googleapis.com",
+  ]
+}
+
+resource "google_project_service" "required" {
+  for_each           = toset(local.required_apis)
+  project            = var.gcp_project_id
+  service            = each.value
+  disable_on_destroy = false # never disable APIs on destroy — the operator/Crossplane rely on them; re-enabling has propagation lag
+}
+
+resource "google_project_service" "secretmanager" {
+  count              = local.stage_github_app ? 1 : 0
+  project            = var.gcp_project_id
+  service            = "secretmanager.googleapis.com"
+  disable_on_destroy = false
 }
 
 resource "google_iam_workload_identity_pool" "kubecore_zitadel" {
@@ -35,6 +58,7 @@ resource "google_iam_workload_identity_pool" "kubecore_zitadel" {
   workload_identity_pool_id = local.wif_pool_id
   display_name              = "KubeCore Zitadel WIF"
   description               = "Trusts the Zitadel issuer; one pool per project shared by all KubeOrgs."
+  depends_on                = [google_project_service.required]
 }
 
 resource "google_iam_workload_identity_pool_provider" "kubecore_zitadel" {
@@ -53,6 +77,7 @@ resource "google_service_account" "crossplane" {
   project      = var.gcp_project_id
   account_id   = "${var.org_name}-crossplane"
   display_name = "Crossplane provisioner SA for org ${var.org_name}"
+  depends_on   = [google_project_service.required]
 }
 
 # The Zitadel sub impersonates the crossplane SA (broker -> external_account chain).
@@ -110,6 +135,7 @@ resource "google_service_account" "eso" {
   project      = var.gcp_project_id
   account_id   = "${var.org_name}-gcp-eso-sa"
   display_name = "ESO SA for ${var.org_name}"
+  depends_on   = [google_project_service.required]
 }
 
 # Secret Manager: ESO PushSecret needs create/get + version add/access, NOT delete → custom role.
@@ -160,6 +186,7 @@ resource "google_service_account" "dns" {
   project      = var.gcp_project_id
   account_id   = "${var.org_name}-gcp-dns-sa"
   display_name = "ExternalDNS SA for ${var.org_name}"
+  depends_on   = [google_project_service.required]
 }
 
 resource "google_project_iam_member" "dns_admin" {
@@ -174,6 +201,7 @@ resource "google_service_account" "node" {
   project      = var.gcp_project_id
   account_id   = "${var.org_name}-node"
   display_name = "GKE node SA for ${var.org_name}"
+  depends_on   = [google_project_service.required]
 }
 
 resource "google_project_iam_member" "node_roles" {
@@ -265,9 +293,10 @@ locals {
 }
 
 resource "google_secret_manager_secret" "github_app" {
-  count     = local.stage_github_app ? 1 : 0
-  project   = var.gcp_project_id
-  secret_id = "${var.org_name}-github-provider-credentials"
+  count      = local.stage_github_app ? 1 : 0
+  project    = var.gcp_project_id
+  secret_id  = "${var.org_name}-github-provider-credentials"
+  depends_on = [google_project_service.secretmanager]
   replication {
     auto {}
   }

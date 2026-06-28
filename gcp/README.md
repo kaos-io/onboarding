@@ -2,6 +2,18 @@
 
 Run once per KubeOrg, in your GCP project, by an IAM-admin, before creating the KubeOrg.
 
+## Prerequisites
+- A GCP project with a **linked billing account**.
+- Run by a principal with `serviceusage.services.enable` plus the onboarding admin roles
+  (or `roles/owner` for the onboarding run).
+- The module enables the required APIs for you. If your org pre-provisions APIs via policy or
+  pipeline, enable them yourself first:
+  ```bash
+  gcloud services enable iam.googleapis.com cloudresourcemanager.googleapis.com \
+    iamcredentials.googleapis.com sts.googleapis.com secretmanager.googleapis.com \
+    --project <PROJECT>
+  ```
+
 ## Run
 ```bash
 git clone https://github.com/kaos-io/onboarding
