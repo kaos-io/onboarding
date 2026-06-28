@@ -1,0 +1,11 @@
+# Terraform — never commit state (may contain sensitive values) or local caches
+**/.terraform/
+**/.terraform.tfstate.lock.info
+**/*.tfstate
+**/*.tfstate.*
+# Client-supplied inputs & secrets — never commit
+**/terraform.tfvars
+**/*.pem
+# Keep the example and the provider lock
+!**/terraform.tfvars.example
+!**/.terraform.lock.hcl
