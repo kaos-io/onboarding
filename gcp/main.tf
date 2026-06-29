@@ -319,8 +319,10 @@ resource "google_secret_manager_secret_version" "github_app" {
   secret = google_secret_manager_secret.github_app[0].id
   # Write-only: the value is sent to GCP but never persisted in Terraform state.
   secret_data_wo = jsonencode({
-    appId      = var.github_app_id
-    privateKey = var.github_app_private_key
+    appId          = var.github_app_id
+    installationId = var.github_app_installation_id
+    privateKey     = var.github_app_private_key
   })
-  secret_data_wo_version = 1
+  # Bumped to 2 to push a new secret version carrying installationId (added 2026-06-29).
+  secret_data_wo_version = 2
 }
