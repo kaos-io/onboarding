@@ -52,6 +52,12 @@ variable "github_app_id" {
   description = "Dedicated GitHub App ID. When empty, no GitHub App secret is staged (shared-app org)."
 }
 
+variable "github_app_installation_id" {
+  type        = string
+  default     = ""
+  description = "Dedicated GitHub App installation ID for this org. Staged alongside github_app_id so ESO consumers (ArgoCD repo-creds/push-creds) can resolve it; without it the ExternalSecret sync fails atomically."
+}
+
 variable "github_app_private_key" {
   type        = string
   default     = ""
