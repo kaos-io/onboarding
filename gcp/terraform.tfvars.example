@@ -15,3 +15,9 @@ zitadel_issuer       = "https://access.platform.kaos-labs.org"
 #   terraform apply -var-file=terraform.tfvars -var="github_app_private_key=$(cat ./app.pem)"
 github_app_id          = ""
 # github_app_private_key supplied via -var at apply time, NOT here.
+
+# Optional — Meluxina HPC integration. Disabled by default. When enabled, point
+# meluxina_ssh_key_path at the signed private key file bound to your Meluxina account;
+# its raw bytes are pushed to the deterministic 'meluxina-ssh-key' GSM secret.
+enable_meluxina_ssh_key = false
+# meluxina_ssh_key_path = "/absolute/path/to/meluxina_private_key"

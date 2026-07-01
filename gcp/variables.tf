@@ -65,6 +65,19 @@ variable "github_app_private_key" {
   description = "Dedicated GitHub App private key (PEM). Staged alongside github_app_id in GCP Secret Manager."
 }
 
+variable "enable_meluxina_ssh_key" {
+  type        = bool
+  default     = false
+  description = "Stage the Meluxina HPC SSH key in GCP Secret Manager under the deterministic, org-independent id 'meluxina-ssh-key'. Default false (opt-in). When true, meluxina_ssh_key_path must point at the signed private key file; its raw bytes are pushed as the secret value (write-only, never persisted in state)."
+}
+
+variable "meluxina_ssh_key_path" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Absolute path to the signed Meluxina private key file (RSA/ed25519). Read via file() and pushed verbatim as the 'meluxina-ssh-key' secret value. Required when enable_meluxina_ssh_key is true; ignored otherwise."
+}
+
 variable "enable_cost_export" {
   type        = bool
   default     = true

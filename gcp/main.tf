@@ -59,7 +59,9 @@ resource "google_project_service" "required" {
 }
 
 resource "google_project_service" "secretmanager" {
-  count              = local.stage_github_app ? 1 : 0
+  # Enabled whenever ANY GSM secret is staged: the dedicated GitHub App credential
+  # and/or the Meluxina HPC SSH key.
+  count              = (local.stage_github_app || var.enable_meluxina_ssh_key) ? 1 : 0
   project            = var.gcp_project_id
   service            = "secretmanager.googleapis.com"
   disable_on_destroy = false
@@ -374,4 +376,34 @@ resource "google_secret_manager_secret_version" "github_app" {
   })
   # Bumped to 2 to push a new secret version carrying installationId (added 2026-06-29).
   secret_data_wo_version = 2
+}
+
+# --- Meluxina HPC SSH key (opt-in, org-independent) ---
+# Deterministic id 'meluxina-ssh-key' — IDENTICAL across all orgs (not org-prefixed):
+# a single shared Meluxina institutional credential. Opt-in via enable_meluxina_ssh_key.
+# The org eso-sa already holds project-level secretmanager.secrets.get + versions.access
+# (kubecoreEsoSecretWriter), so no extra IAM is needed for ESO to read it.
+resource "google_secret_manager_secret" "meluxina_ssh_key" {
+  count      = var.enable_meluxina_ssh_key ? 1 : 0
+  project    = var.gcp_project_id
+  secret_id  = "meluxina-ssh-key"
+  depends_on = [google_project_service.secretmanager]
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "meluxina_ssh_key" {
+  count  = var.enable_meluxina_ssh_key ? 1 : 0
+  secret = google_secret_manager_secret.meluxina_ssh_key[0].id
+  # Write-only: the raw key bytes are sent to GCP but never persisted in Terraform state.
+  secret_data_wo         = file(var.meluxina_ssh_key_path)
+  secret_data_wo_version = 1
+
+  lifecycle {
+    precondition {
+      condition     = trimspace(var.meluxina_ssh_key_path) != ""
+      error_message = "meluxina_ssh_key_path must be set (path to the signed private key file) when enable_meluxina_ssh_key is true."
+    }
+  }
 }
