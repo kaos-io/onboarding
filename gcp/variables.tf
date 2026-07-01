@@ -65,14 +65,14 @@ variable "github_app_private_key" {
   description = "Dedicated GitHub App private key (PEM). Staged alongside github_app_id in GCP Secret Manager."
 }
 
-variable "billing_export_dataset_id" {
-  type        = string
-  default     = ""
-  description = "BigQuery billing-export dataset ID (e.g. \"billing_export\"). Optional. When set, grants the org ESO service account read-only access so the in-client billing reader can query cost actuals. Empty = no grant (greenfield unchanged). Supply only after the client's billing-admin has enabled the export."
+variable "enable_cost_export" {
+  type        = bool
+  default     = true
+  description = "Provision the deterministic cost-export footprint: enable the BigQuery API, create the kaos_billing_export dataset, and grant the org ESO service account read + job access so the in-client KAOS billing reader can query cost actuals. Default true (standard footprint). Set false to opt out entirely (zero cost-export resources). The Cloud Billing -> BigQuery export that populates the dataset is a separate one-time billing-admin step (no Terraform resource exists for it)."
 }
 
-variable "billing_export_dataset_project" {
+variable "billing_export_location" {
   type        = string
-  default     = ""
-  description = "Project that holds the billing-export dataset, if different from gcp_project_id. Empty = use gcp_project_id."
+  default     = "EU"
+  description = "BigQuery location for the kaos_billing_export dataset (e.g. \"EU\", \"US\", or a region). Default \"EU\" for EU data residency. The Cloud Billing export target dataset must match a location BigQuery billing export supports."
 }
