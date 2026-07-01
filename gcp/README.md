@@ -62,5 +62,5 @@ To let the KAOS cost dashboard read invoice-accurate cost actuals for this org:
    `billing_export_dataset_project` if the dataset is in another project). This grants
    the org ESO service account read-only, dataset-scoped `roles/bigquery.dataViewer`.
 
-Leaving `billing_export_dataset_id` unset is a no-op — onboarding is unchanged. The grant
+Leaving `billing_export_dataset_id` unset is a no-op; onboarding is unchanged. The grant
 is read-only and dataset-scoped; it never touches the billing account or project-wide IAM.
