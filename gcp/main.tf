@@ -48,6 +48,8 @@ locals {
     "dns.googleapis.com",
     "container.googleapis.com",
     "servicenetworking.googleapis.com",
+    # PRD-247 GCP ML pricing exporter: Cloud Billing price-catalog API (SKU pricing).
+    "cloudbilling.googleapis.com",
   ]
 }
 
