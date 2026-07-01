@@ -80,3 +80,23 @@ and the dashboard shows no actuals; nothing else is affected.
 The grants are read-only and dataset-scoped for data; the only project-scoped grant is
 `jobUser` (job creation, no data access on its own). Nothing touches the billing account or
 other datasets.
+
+## Meluxina HPC SSH key
+
+Optional, disabled by default. When enabled, onboarding stages the signed private key that
+binds this deployment to a Meluxina HPC account in GCP Secret Manager under the
+**deterministic, org-independent** id `meluxina-ssh-key` (identical for every org — it is a
+single shared institutional credential, not per-org). ESO reads it via the org eso-sa's
+existing project-level Secret Manager access (no extra IAM).
+
+```bash
+terraform apply -var-file=terraform.tfvars \
+  -var="enable_meluxina_ssh_key=true" \
+  -var="meluxina_ssh_key_path=/absolute/path/to/meluxina_private_key"
+```
+
+The key's raw bytes are pushed via write-only `secret_data_wo`, so they reach GSM but are
+never persisted in Terraform state. `terraform output meluxina_ssh_key_secret_id` returns
+`meluxina-ssh-key` when enabled, empty otherwise. Enabling this also enables the Secret
+Manager API if it is not already on. Set `enable_meluxina_ssh_key = false` (the default) to
+stage nothing.

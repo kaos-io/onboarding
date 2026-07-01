@@ -27,6 +27,11 @@ output "github_app_secret_id" {
   description = "GSM secret id holding the dedicated GitHub App {appId,privateKey}; empty for shared-app orgs."
 }
 
+output "meluxina_ssh_key_secret_id" {
+  value       = var.enable_meluxina_ssh_key ? google_secret_manager_secret.meluxina_ssh_key[0].secret_id : ""
+  description = "GSM secret id holding the Meluxina HPC SSH key ('meluxina-ssh-key'); empty when the integration is disabled."
+}
+
 output "wif_pool_id" {
   value       = local.wif_pool_id
   description = "Per-org WIF pool/provider id ({org}-kaosid). Must match the operator/broker derivation."
