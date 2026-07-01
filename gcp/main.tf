@@ -183,9 +183,11 @@ resource "google_project_iam_member" "eso_monitoring_viewer" {
 # Cost export (kaos-cost): deterministic BigQuery footprint for the in-client
 # billing reader. Terraform OWNS the dataset (onboarding runs on an empty project
 # before anything else, so the dataset cannot be assumed to pre-exist). Opt-in via
-# enable_cost_export (default true). Out of band: a billing-admin points
-# Cloud Billing -> BigQuery export at the kaos_billing_export dataset (GCP exposes
-# no Terraform resource for that export config).
+# enable_cost_export (default FALSE — FUTURE WORK: the billing-account metrics-
+# consumption path is not built yet, and the Cloud Billing -> BigQuery export that
+# would populate this dataset is a Console-only billing-admin step with no API/
+# Terraform resource, so the footprint stays inert on its own). Left in place so the
+# footprint can be re-enabled in one flag flip once that path exists.
 # ---------------------------------------------------------------------------
 
 # BigQuery API — must be enabled before the dataset is created on a fresh project.

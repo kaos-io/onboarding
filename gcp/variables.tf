@@ -80,8 +80,8 @@ variable "meluxina_ssh_key_path" {
 
 variable "enable_cost_export" {
   type        = bool
-  default     = true
-  description = "Provision the deterministic cost-export footprint: enable the BigQuery API, create the kaos_billing_export dataset, and grant the org ESO service account read + job access so the in-client KAOS billing reader can query cost actuals. Default true (standard footprint). Set false to opt out entirely (zero cost-export resources). The Cloud Billing -> BigQuery export that populates the dataset is a separate one-time billing-admin step (no Terraform resource exists for it)."
+  default     = false
+  description = "Provision the deterministic cost-export footprint: enable the BigQuery API, create the kaos_billing_export dataset, and grant the org ESO service account read + job access so the in-client KAOS billing reader can query cost actuals. Default false — the footprint is inert until the billing-account metrics-consumption path is built (FUTURE WORK; the Cloud Billing -> BigQuery export that populates the dataset is a Console-only billing-admin step with no API/Terraform resource, so the dataset stays empty on its own). Set true to opt in to the footprint once that path exists."
 }
 
 variable "billing_export_location" {
