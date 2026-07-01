@@ -56,15 +56,27 @@ Verified against scratch project `wwwe-500812` on 2026-06-28 with `hashicorp/goo
   terraform.tfstate` was `0` — `secret_data_wo` is write-only, so the key reached GSM but is
   absent from Terraform state. Destroyed clean afterward.
 
-## Cost export (optional)
+## Cost export
 
-To let the KAOS cost dashboard read invoice-accurate cost actuals for this org:
+Onboarding deterministically provisions the footprint the KAOS cost dashboard needs to
+read invoice-accurate cost actuals for this org, gated by `enable_cost_export` (default
+`true`):
 
-1. **Billing-admin (one-time, out of band):** enable a BigQuery billing export
-   into a dataset in this project (Cloud Billing → Billing export → BigQuery export).
-2. **Re-apply with the dataset ID:** set `billing_export_dataset_id` (and
-   `billing_export_dataset_project` if the dataset is in another project). This grants
-   the org ESO service account read-only, dataset-scoped `roles/bigquery.dataViewer`.
+- enables the BigQuery API,
+- creates the `kaos_billing_export` BigQuery dataset (`billing_export_location`, default
+  `EU`),
+- grants the org ESO service account read-only, dataset-scoped `roles/bigquery.dataViewer`
+  on it, plus project-scoped `roles/bigquery.jobUser` so it can run queries,
+- exposes the dataset id as the `billing_export_dataset_id` output.
 
-Leaving `billing_export_dataset_id` unset is a no-op; onboarding is unchanged. The grant
-is read-only and dataset-scoped; it never touches the billing account or project-wide IAM.
+Set `enable_cost_export = false` to opt out entirely (zero cost-export resources).
+
+**One-time billing-admin step (out of band):** point Cloud Billing -> Billing export ->
+BigQuery export at the `kaos_billing_export` dataset in this project. GCP exposes no
+Terraform resource for the export config, so this stays manual. The dataset already exists
+after onboarding, so it is just a target selection. Until it is wired, the dataset is empty
+and the dashboard shows no actuals; nothing else is affected.
+
+The grants are read-only and dataset-scoped for data; the only project-scoped grant is
+`jobUser` (job creation, no data access on its own). Nothing touches the billing account or
+other datasets.

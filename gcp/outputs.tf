@@ -31,3 +31,8 @@ output "wif_pool_id" {
   value       = local.wif_pool_id
   description = "Per-org WIF pool/provider id ({org}-kaosid). Must match the operator/broker derivation."
 }
+
+output "billing_export_dataset_id" {
+  value       = var.enable_cost_export ? google_bigquery_dataset.billing_export[0].dataset_id : ""
+  description = "BigQuery dataset id the in-client billing reader queries for cost actuals; empty when cost export is disabled. The system binds to this."
+}
