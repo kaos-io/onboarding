@@ -177,6 +177,18 @@ resource "google_project_iam_member" "eso_monitoring_viewer" {
   member  = "serviceAccount:${google_service_account.eso.email}"
 }
 
+# Cost export (kaos-cost): read-only access to the billing-export BigQuery dataset so the
+# in-client billing reader can query cost actuals. Opt-in (count-gated), dataset-scoped,
+# read-only. Reuses the org ESO SA — no new SA, no billing-account IAM. Out of band: the
+# client's billing-admin must have enabled the BigQuery billing export first.
+resource "google_bigquery_dataset_iam_member" "eso_billing_dataset_reader" {
+  count      = var.billing_export_dataset_id != "" ? 1 : 0
+  project    = var.billing_export_dataset_project != "" ? var.billing_export_dataset_project : var.gcp_project_id
+  dataset_id = var.billing_export_dataset_id
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.eso.email}"
+}
+
 # Zitadel sub impersonates eso-sa (control-plane ESO via broker)
 resource "google_service_account_iam_member" "eso_wif_user" {
   service_account_id = google_service_account.eso.name
