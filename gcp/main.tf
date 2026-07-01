@@ -179,57 +179,6 @@ resource "google_project_iam_member" "eso_monitoring_viewer" {
   member  = "serviceAccount:${google_service_account.eso.email}"
 }
 
-# ---------------------------------------------------------------------------
-# Cost export (kaos-cost): deterministic BigQuery footprint for the in-client
-# billing reader. Terraform OWNS the dataset (onboarding runs on an empty project
-# before anything else, so the dataset cannot be assumed to pre-exist). Opt-in via
-# enable_cost_export (default FALSE — FUTURE WORK: the billing-account metrics-
-# consumption path is not built yet, and the Cloud Billing -> BigQuery export that
-# would populate this dataset is a Console-only billing-admin step with no API/
-# Terraform resource, so the footprint stays inert on its own). Left in place so the
-# footprint can be re-enabled in one flag flip once that path exists.
-# ---------------------------------------------------------------------------
-
-# BigQuery API — must be enabled before the dataset is created on a fresh project.
-resource "google_project_service" "bigquery" {
-  count              = var.enable_cost_export ? 1 : 0
-  project            = var.gcp_project_id
-  service            = "bigquery.googleapis.com"
-  disable_on_destroy = false
-}
-
-# The billing-export dataset. Fixed id so the system binds deterministically via the
-# billing_export_dataset_id output. Cloud Billing export writes cost tables here.
-resource "google_bigquery_dataset" "billing_export" {
-  count                      = var.enable_cost_export ? 1 : 0
-  project                    = var.gcp_project_id
-  dataset_id                 = "kaos_billing_export"
-  location                   = var.billing_export_location
-  friendly_name              = "KAOS billing export"
-  description                = "Cloud Billing BigQuery export target, read by the in-client KAOS billing reader. Populated out-of-band by a billing-admin (Cloud Billing -> BigQuery export)."
-  delete_contents_on_destroy = true
-
-  depends_on = [google_project_service.bigquery]
-}
-
-# Read-only, dataset-scoped access to the billing data for the org ESO SA.
-resource "google_bigquery_dataset_iam_member" "eso_billing_dataset_reader" {
-  count      = var.enable_cost_export ? 1 : 0
-  project    = var.gcp_project_id
-  dataset_id = google_bigquery_dataset.billing_export[0].dataset_id
-  role       = "roles/bigquery.dataViewer"
-  member     = "serviceAccount:${google_service_account.eso.email}"
-}
-
-# Job-creation access so the billing reader can RUN queries (dataViewer alone cannot
-# execute SQL). jobUser grants no data access on its own — dataViewer remains the data guard.
-resource "google_project_iam_member" "eso_bigquery_job_user" {
-  count   = var.enable_cost_export ? 1 : 0
-  project = var.gcp_project_id
-  role    = "roles/bigquery.jobUser"
-  member  = "serviceAccount:${google_service_account.eso.email}"
-}
-
 # Zitadel sub impersonates eso-sa (control-plane ESO via broker)
 resource "google_service_account_iam_member" "eso_wif_user" {
   service_account_id = google_service_account.eso.name

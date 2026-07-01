@@ -77,15 +77,3 @@ variable "meluxina_ssh_key_path" {
   sensitive   = true
   description = "Absolute path to the signed Meluxina private key file (RSA/ed25519). Read via file() and pushed verbatim as the 'meluxina-ssh-key' secret value. Required when enable_meluxina_ssh_key is true; ignored otherwise."
 }
-
-variable "enable_cost_export" {
-  type        = bool
-  default     = false
-  description = "Provision the deterministic cost-export footprint: enable the BigQuery API, create the kaos_billing_export dataset, and grant the org ESO service account read + job access so the in-client KAOS billing reader can query cost actuals. Default false — the footprint is inert until the billing-account metrics-consumption path is built (FUTURE WORK; the Cloud Billing -> BigQuery export that populates the dataset is a Console-only billing-admin step with no API/Terraform resource, so the dataset stays empty on its own). Set true to opt in to the footprint once that path exists."
-}
-
-variable "billing_export_location" {
-  type        = string
-  default     = "EU"
-  description = "BigQuery location for the kaos_billing_export dataset (e.g. \"EU\", \"US\", or a region). Default \"EU\" for EU data residency. The Cloud Billing export target dataset must match a location BigQuery billing export supports."
-}

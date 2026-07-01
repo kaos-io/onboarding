@@ -56,35 +56,6 @@ Verified against scratch project `wwwe-500812` on 2026-06-28 with `hashicorp/goo
   terraform.tfstate` was `0` — `secret_data_wo` is write-only, so the key reached GSM but is
   absent from Terraform state. Destroyed clean afterward.
 
-## Cost export (disabled by default — future work)
-
-> **Status: FUTURE WORK, disabled by default (`enable_cost_export = false`).**
-> The billing-account metrics-consumption path is not built yet, so the footprint below is
-> **not provisioned** on a normal onboarding run. The Terraform is kept intact so the whole
-> footprint can be turned on with a single flag flip once that path lands. Leave the default
-> as-is; do not set `enable_cost_export = true` until the consumption path exists.
-
-When enabled (`enable_cost_export = true`), onboarding deterministically provisions the
-footprint the KAOS cost dashboard needs to read invoice-accurate cost actuals for this org:
-
-- enables the BigQuery API,
-- creates the `kaos_billing_export` BigQuery dataset (`billing_export_location`, default
-  `EU`),
-- grants the org ESO service account read-only, dataset-scoped `roles/bigquery.dataViewer`
-  on it, plus project-scoped `roles/bigquery.jobUser` so it can run queries,
-- exposes the dataset id as the `billing_export_dataset_id` output.
-
-**Why it can't be fully automated (the blocker that makes this future work):** even with the
-dataset in place, the Cloud Billing -> BigQuery export that populates it is a **Console-only**
-billing-admin step — GCP exposes no API, `gcloud`, or Terraform resource for the export
-config. So the dataset stays empty until a human wires it, and the dashboard shows no actuals.
-Consuming billing metrics end-to-end (e.g. reading directly from the billing account) is the
-outstanding design work tracked here.
-
-The grants are read-only and dataset-scoped for data; the only project-scoped grant is
-`jobUser` (job creation, no data access on its own). Nothing touches the billing account or
-other datasets.
-
 ## Meluxina HPC SSH key
 
 Optional, disabled by default. When enabled, onboarding stages the signed private key that
