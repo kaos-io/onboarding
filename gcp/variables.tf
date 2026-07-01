@@ -58,3 +58,15 @@ variable "github_app_private_key" {
   sensitive   = true
   description = "Dedicated GitHub App private key (PEM). Staged alongside github_app_id in GCP Secret Manager."
 }
+
+variable "billing_export_dataset_id" {
+  type        = string
+  default     = ""
+  description = "BigQuery billing-export dataset ID (e.g. \"billing_export\"). Optional. When set, grants the org ESO service account read-only access so the in-client billing reader can query cost actuals. Empty = no grant (greenfield unchanged). Supply only after the client's billing-admin has enabled the export."
+}
+
+variable "billing_export_dataset_project" {
+  type        = string
+  default     = ""
+  description = "Project that holds the billing-export dataset, if different from gcp_project_id. Empty = use gcp_project_id."
+}
