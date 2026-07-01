@@ -51,3 +51,16 @@ Verified against scratch project `wwwe-500812` on 2026-06-28 with `hashicorp/goo
   `acme-github-provider-credentials`, version `1` ENABLED), while `grep -c "PRIVATE KEY"
   terraform.tfstate` was `0` — `secret_data_wo` is write-only, so the key reached GSM but is
   absent from Terraform state. Destroyed clean afterward.
+
+## Cost export (optional)
+
+To let the KAOS cost dashboard read invoice-accurate cost actuals for this org:
+
+1. **Billing-admin (one-time, out of band):** enable a BigQuery billing export
+   into a dataset in this project (Cloud Billing → Billing export → BigQuery export).
+2. **Re-apply with the dataset ID:** set `billing_export_dataset_id` (and
+   `billing_export_dataset_project` if the dataset is in another project). This grants
+   the org ESO service account read-only, dataset-scoped `roles/bigquery.dataViewer`.
+
+Leaving `billing_export_dataset_id` unset is a no-op — onboarding is unchanged. The grant
+is read-only and dataset-scoped; it never touches the billing account or project-wide IAM.
