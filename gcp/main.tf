@@ -181,6 +181,16 @@ resource "google_project_iam_member" "eso_monitoring_viewer" {
   member  = "serviceAccount:${google_service_account.eso.email}"
 }
 
+# Read-only, project-scoped visibility of Compute resources for the eso-sa. Consumed by
+# workloads running as this SA (e.g. observability/cost exporters that enumerate compute
+# inventory). Non-mutating (viewer). Declared here so onboarding is the single source of
+# truth — previously this binding was added out-of-band at runtime.
+resource "google_project_iam_member" "eso_compute_viewer" {
+  project = var.gcp_project_id
+  role    = "roles/compute.viewer"
+  member  = "serviceAccount:${google_service_account.eso.email}"
+}
+
 # ---------------------------------------------------------------------------
 # Cost export (kaos-cost): deterministic BigQuery footprint for the in-client
 # billing reader. Terraform OWNS the dataset (onboarding runs on an empty project
