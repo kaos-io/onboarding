@@ -22,6 +22,11 @@ output "node_sa_email" {
   value = local.node_sa_email
 }
 
+output "gke_sa_email" {
+  value       = local.gke_sa_email
+  description = "GKE-developer SA ({org}-gcp-gke-sa) holding container.developer + compute.viewer; adopted Observe-only by the gcpprovider composition and bound to the {org}-gke-sa KSA per pool."
+}
+
 output "github_app_secret_id" {
   value       = local.stage_github_app ? google_secret_manager_secret.github_app[0].secret_id : ""
   description = "GSM secret id holding the dedicated GitHub App {appId,privateKey}; empty for shared-app orgs."
