@@ -16,6 +16,8 @@ locals {
   eso_sa_email        = "${var.org_name}-gcp-eso-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
   dns_sa_email        = "${var.org_name}-gcp-dns-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
   node_sa_email       = "${var.org_name}-node@${var.gcp_project_id}.iam.gserviceaccount.com"
+  # account_id "{org}-gcp-gke-sa" = 11-char suffix; org_name <= 19 => <= 30 (GCP cap). Never truncate org_name.
+  gke_sa_email = "${var.org_name}-gcp-gke-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
 
   wif_principal = "principal://iam.googleapis.com/projects/${var.gcp_project_number}/locations/global/workloadIdentityPools/${local.wif_pool_id}/subject/${local.zitadel_sub}"
 
@@ -181,15 +183,13 @@ resource "google_project_iam_member" "eso_monitoring_viewer" {
   member  = "serviceAccount:${google_service_account.eso.email}"
 }
 
-# Read-only, project-scoped visibility of Compute resources for the eso-sa. Consumed by
-# workloads running as this SA (e.g. observability/cost exporters that enumerate compute
-# inventory). Non-mutating (viewer). Declared here so onboarding is the single source of
-# truth — previously this binding was added out-of-band at runtime.
-resource "google_project_iam_member" "eso_compute_viewer" {
-  project = var.gcp_project_id
-  role    = "roles/compute.viewer"
-  member  = "serviceAccount:${google_service_account.eso.email}"
-}
+# NOTE: the previous `eso_compute_viewer` (roles/compute.viewer on eso-sa) was REMOVED —
+# it was the I1 anti-pattern (a live-compute capability piled onto the shared eso-sa, which
+# every KSA bound to eso-sa silently inherits). The only consumer was the ML live-compute
+# probe/healer, whose compute.viewer now lives on the dedicated {org}-gcp-gke-sa
+# (gke_compute_viewer, below). The observability-cost exporter needs only
+# roles/monitoring.viewer (eso_monitoring_viewer, above) + the Cloud Billing Catalog API,
+# not compute.viewer — so removing this grant does not affect cost dashboards.
 
 # ---------------------------------------------------------------------------
 # Cost export (kaos-cost): deterministic BigQuery footprint for the in-client
@@ -273,6 +273,43 @@ resource "google_project_iam_member" "dns_admin" {
 }
 
 
+# --- GKE-developer SA (org-shared, single job: cluster/node-pool K8s-API access) ---
+# Carries the container.developer capability the ML live-compute workloads need
+# (autoscaler-healer + create/destroy-nodegroups: clear stale autoscaler backoff on
+# scale-to-zero pools, create ephemeral per-pipeline node pools). Dedicated SA per
+# invariant I1 (one SA, one job): granting container.developer on the shared eso-sa
+# would silently escalate every KSA already bound to eso-sa (external-secrets/{org}-eso-sa,
+# argo-workflows/ml-compute-probe-sa, operate-workflow-sa) to K8s-API access on ALL
+# clusters in the project. This SA is distributed to child clusters via the pool
+# composition's dedicated KSA ({org}-gke-sa) + per-cluster Workload Identity binding.
+resource "google_service_account" "gke" {
+  project      = var.gcp_project_id
+  account_id   = "${var.org_name}-gcp-gke-sa"
+  display_name = "GKE developer SA for ${var.org_name}"
+  depends_on   = [google_project_service.required]
+}
+
+# container.developer bridges GCP IAM to in-cluster Kubernetes RBAC on EVERY cluster in
+# the project (the GKE IAM->RBAC bridge). Held ONLY by this dedicated SA — documented for
+# the security team alongside DEC-GCP-03. Needed by the autoscaler-healer (node-pool
+# min-count bump/revert) + create-nodegroups (ephemeral pool create/destroy).
+resource "google_project_iam_member" "gke_container_developer" {
+  project = var.gcp_project_id
+  role    = "roles/container.developer"
+  member  = "serviceAccount:${google_service_account.gke.email}"
+}
+
+# Read-only Compute visibility: the autoscaler-healer/nodepool-janitor enumerate node
+# pools + resolve the cluster's zonal location via the Compute/Container APIs. Moved here
+# from eso-sa (the eso_compute_viewer grant is the anti-pattern I1 rules out going forward);
+# lives on this dedicated SA so the compute-read capability travels with container.developer.
+resource "google_project_iam_member" "gke_compute_viewer" {
+  project = var.gcp_project_id
+  role    = "roles/compute.viewer"
+  member  = "serviceAccount:${google_service_account.gke.email}"
+}
+
+
 # --- Node SA (org-shared, replaces per-pool {pool}-node) ---
 resource "google_service_account" "node" {
   project      = var.gcp_project_id
@@ -322,6 +359,15 @@ resource "google_service_account_iam_member" "operator_view_dns" {
   member             = "serviceAccount:${google_service_account.crossplane.email}"
 }
 
+# The crossplane SA must READ the gke SA to OBSERVE/adopt it (the gcpprovider composition
+# tracks it with managementPolicies:["Observe"]). serviceAccountViewer is read-only (get),
+# SA-scoped — no actAs, no write, non-escalating. Same rule as operator_view_eso/dns.
+resource "google_service_account_iam_member" "operator_view_gke" {
+  service_account_id = google_service_account.gke.name
+  role               = "roles/iam.serviceAccountViewer"
+  member             = "serviceAccount:${google_service_account.crossplane.email}"
+}
+
 # --- Workload-Identity binder (resource-scoped to the eso/dns SAs only) ---
 # The three GKE WI bindings (KSA -> {org}-gcp-eso-sa / -dns-sa) reference the
 # {projectId}.svc.id.goog pool, which GCP only materializes after the first GKE
@@ -329,12 +375,13 @@ resource "google_service_account_iam_member" "operator_view_dns" {
 # the KubePool `system` / `observability-cost` compositions create them post-cluster
 # (level-triggered, self-healing). To let the operator's standing {org}-crossplane SA
 # create EXACTLY those bindings and nothing more, grant it get/setIamPolicy on ONLY
-# the two target SA resources via this minimal custom role.
+# the three target SA resources (eso, dns, gke) via this minimal custom role — the role's
+# POWERS are unchanged (still just get/setIamPolicy); only its TARGETS grow by the gke SA.
 #
-# Blast radius (security): get/setIamPolicy on two low-privilege runtime SAs in the
+# Blast radius (security): get/setIamPolicy on three low-privilege runtime SAs in the
 # client's own project (INV-GCP-01). Cannot create/delete/modify any SA, cannot touch
 # project IAM, cannot reach any other SA. The only capability reachable by abusing it
-# (granting self impersonation on eso/dns SA) that crossplane does not already hold is
+# (granting self impersonation on eso/dns/gke SA) that crossplane does not already hold is
 # roles/monitoring.viewer (read-only) — crossplane already holds dns.admin + broader
 # Secret Manager + storage.admin + container.admin. Non-escalating; documented for the
 # security team alongside DEC-GCP-03.
@@ -342,7 +389,7 @@ resource "google_project_iam_custom_role" "wi_binder" {
   project     = var.gcp_project_id
   role_id     = "kubecoreWorkloadIdentityBinder"
   title       = "KubeCore Workload Identity Binder"
-  description = "Crossplane SA: get/set IAM policy on the org eso/dns SAs only, to create GKE Workload Identity bindings post-cluster. No create/delete; no project IAM."
+  description = "Crossplane SA: get/set IAM policy on the org eso/dns/gke SAs only, to create GKE Workload Identity bindings post-cluster. No create/delete; no project IAM."
   permissions = [
     "iam.serviceAccounts.getIamPolicy",
     "iam.serviceAccounts.setIamPolicy",
@@ -357,6 +404,12 @@ resource "google_service_account_iam_member" "crossplane_wi_binder_eso" {
 
 resource "google_service_account_iam_member" "crossplane_wi_binder_dns" {
   service_account_id = google_service_account.dns.name
+  role               = google_project_iam_custom_role.wi_binder.name
+  member             = "serviceAccount:${google_service_account.crossplane.email}"
+}
+
+resource "google_service_account_iam_member" "crossplane_wi_binder_gke" {
+  service_account_id = google_service_account.gke.name
   role               = google_project_iam_custom_role.wi_binder.name
   member             = "serviceAccount:${google_service_account.crossplane.email}"
 }
