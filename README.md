@@ -8,7 +8,8 @@ service accounts, narrowed IAM + Workload-Identity bindings) so the KAOS control
 
 ## Clouds
 - `gcp/` — supported. See `gcp/README.md`.
-- `aws/`, `azure/` — coming soon.
+- `azure/` — supported. See `azure/README.md`.
+- `aws/` — coming soon.
 
 ## Security
 - Keyless: no service-account keys are created or exported. The control plane impersonates
