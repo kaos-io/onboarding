@@ -20,3 +20,53 @@ locals {
 
   subscription_scope = "/subscriptions/${var.subscription_id}"
 }
+
+resource "azurerm_resource_group" "org" {
+  name     = local.rg_name
+  location = var.location
+  tags = {
+    Organization = var.org_name
+    ManagedBy    = "kaos-onboarding"
+    Purpose      = "org-foundation"
+  }
+}
+
+# Standing provisioning identity — infra only. No role-assignment / identity power
+# beyond the single resource-scoped FIC-writer grant on the ESO UAMI (Task 3).
+resource "azurerm_user_assigned_identity" "crossplane" {
+  name                = local.crossplane_uami_name
+  location            = var.location
+  resource_group_name = azurerm_resource_group.org.name
+  tags = {
+    Organization = var.org_name
+    ManagedBy    = "kaos-onboarding"
+    Purpose      = "crossplane-provisioning"
+  }
+}
+
+# The Zitadel org machine user (sub = local.zitadel_sub) federates into this UAMI.
+# Audience is the SHARED broker clientId (aud=broker, sub=per-org — PRD-352 trust model);
+# the legacy per-org audience kubecore-{org}-xcloud is retired.
+resource "azurerm_federated_identity_credential" "crossplane_zitadel" {
+  name                = "kubecore-${var.org_name}-zitadel"
+  resource_group_name = azurerm_resource_group.org.name
+  parent_id           = azurerm_user_assigned_identity.crossplane.id
+  issuer              = var.zitadel_issuer
+  subject             = local.zitadel_sub
+  audience            = [var.broker_app_client_id]
+}
+
+# ESO workload identity. Its FIC is NOT created here: the FIC subject is
+# system:serviceaccount:{org}:{org}-eso-sa against the CONTROL-PLANE OIDC issuer,
+# which is platform-side and changes on control-plane migration — the azureprovider
+# composition owns it (same rationale as GCP's composition-owned WI bindings, PR #550).
+resource "azurerm_user_assigned_identity" "eso" {
+  name                = local.eso_uami_name
+  location            = var.location
+  resource_group_name = azurerm_resource_group.org.name
+  tags = {
+    Organization = var.org_name
+    ManagedBy    = "kaos-onboarding"
+    Purpose      = "ESO-WIF"
+  }
+}
