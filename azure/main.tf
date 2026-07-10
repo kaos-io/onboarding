@@ -70,3 +70,115 @@ resource "azurerm_user_assigned_identity" "eso" {
     Purpose      = "ESO-WIF"
   }
 }
+
+# TF-owned so the dedicated GitHub App key stages single-pass at onboarding (GSM parity).
+# Field values MUST match the azureprovider composition's (now observed) Vault:
+# RBAC authorization, purge protection ON, 7-day soft delete, sku standard.
+resource "azurerm_key_vault" "org" {
+  name                       = local.kv_name
+  location                   = var.location
+  resource_group_name        = azurerm_resource_group.org.name
+  tenant_id                  = var.tenant_id
+  sku_name                   = "standard"
+  enable_rbac_authorization  = true
+  purge_protection_enabled   = true
+  soft_delete_retention_days = 7
+  tags = {
+    Organization = var.org_name
+    ManagedBy    = "kaos-onboarding"
+    Purpose      = "org-secrets"
+  }
+}
+
+# The onboarding runner needs data-plane write to stage the secret (RBAC mode).
+resource "azurerm_role_assignment" "runner_kv_officer" {
+  scope                = azurerm_key_vault.org.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+data "azurerm_client_config" "current" {}
+
+resource "azurerm_key_vault_secret" "github_app" {
+  count        = local.stage_github_app ? 1 : 0
+  name         = local.github_secret_name
+  key_vault_id = azurerm_key_vault.org.id
+  content_type = "application/json"
+  # Write-only: sent to Azure, never persisted in Terraform state (GSM secret_data_wo parity).
+  value_wo = jsonencode({
+    appId          = var.github_app_id
+    installationId = var.github_app_installation_id
+    privateKey     = var.github_app_private_key
+  })
+  value_wo_version = 1
+  depends_on       = [azurerm_role_assignment.runner_kv_officer]
+}
+
+# ---------------------------------------------------------------------------
+# Least-priv grants (replaces the legacy subscription-scope Owner).
+# Subscription scope is required for the provisioning roles because the AKS
+# composition creates a per-cluster resource group (matchControllerRef) —
+# the Azure analogue of GCP's project-scoped operator_project_roles.
+# ---------------------------------------------------------------------------
+
+# Custom role: RG lifecycle only (no builtin covers create/delete RG without Contributor).
+resource "azurerm_role_definition" "rg_lifecycle" {
+  name        = "kaos-${var.org_name}-rg-lifecycle"
+  scope       = local.subscription_scope
+  description = "KAOS ${var.org_name}: create/read/delete resource groups (AKS per-cluster RGs)."
+  permissions {
+    actions = [
+      "Microsoft.Resources/subscriptions/resourceGroups/read",
+      "Microsoft.Resources/subscriptions/resourceGroups/write",
+      "Microsoft.Resources/subscriptions/resourceGroups/delete",
+    ]
+  }
+  assignable_scopes = [local.subscription_scope]
+}
+
+locals {
+  # Provisioning-only builtin roles for the crossplane UAMI, subscription scope.
+  # Working set from the composition audit (network/VNet+subnets, AKS cluster,
+  # DNS zone+records, Key Vault mgmt). Extend ONLY on a verified AuthorizationFailed
+  # during Stage-1/Stage-2 live runs; record every addition in the README.
+  crossplane_subscription_roles = [
+    "Network Contributor",
+    "Azure Kubernetes Service Contributor Role",
+    "DNS Zone Contributor",
+    "Key Vault Contributor",
+  ]
+}
+
+resource "azurerm_role_assignment" "crossplane_roles" {
+  for_each             = toset(local.crossplane_subscription_roles)
+  scope                = local.subscription_scope
+  role_definition_name = each.value
+  principal_id         = azurerm_user_assigned_identity.crossplane.principal_id
+}
+
+resource "azurerm_role_assignment" "crossplane_rg_lifecycle" {
+  scope              = local.subscription_scope
+  role_definition_id = azurerm_role_definition.rg_lifecycle.role_definition_resource_id
+  principal_id       = azurerm_user_assigned_identity.crossplane.principal_id
+}
+
+# FIC-writer: composition manages the ESO FIC on this ONE identity (wi_binder analogue).
+resource "azurerm_role_assignment" "crossplane_eso_fic_writer" {
+  scope                = azurerm_user_assigned_identity.eso.id
+  role_definition_name = "Managed Identity Contributor"
+  principal_id         = azurerm_user_assigned_identity.crossplane.principal_id
+}
+
+# ESO data-plane: read/write org secrets in the org KV (resource-scoped).
+resource "azurerm_role_assignment" "eso_kv_officer" {
+  scope                = azurerm_key_vault.org.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = azurerm_user_assigned_identity.eso.principal_id
+}
+
+# DNS record management for the org zone (zone lives in the org RG; RG scope).
+resource "azurerm_role_assignment" "eso_dns_contributor" {
+  scope                = azurerm_resource_group.org.id
+  role_definition_name = "DNS Zone Contributor"
+  principal_id         = azurerm_user_assigned_identity.eso.principal_id
+}
