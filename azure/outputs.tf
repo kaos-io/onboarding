@@ -8,6 +8,11 @@ output "crossplane_uami_client_id" {
   description = "Feed into KubeOrg spec.azureConfig.clientId (OIDCTokenFile ProviderConfig)."
 }
 
+output "eso_uami_client_id" {
+  value       = azurerm_user_assigned_identity.eso.client_id
+  description = "ESO UAMI client id. Feed into KubeOrg spec.azureConfig.esoClientId (the composition emits it to status; both org- and child-cluster ESO consumers read it)."
+}
+
 output "tenant_id" {
   value       = var.tenant_id
   description = "Feed into KubeOrg spec.azureConfig.tenantId."

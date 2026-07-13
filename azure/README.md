@@ -60,6 +60,7 @@ Re-running is a no-op (idempotent).
 | Output                       | KubeOrg field                        |
 |-------------------------------|---------------------------------------|
 | `crossplane_uami_client_id`   | `spec.azureConfig.clientId`            |
+| `eso_uami_client_id`          | `spec.azureConfig.esoClientId`         |
 | `tenant_id`                   | `spec.azureConfig.tenantId`            |
 | `subscription_id`              | `spec.azureConfig.subscriptionId`      |
 | — (by convention, not an output) | `spec.azureConfig.providerConfig` = `{org}-azure` |
