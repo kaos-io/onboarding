@@ -37,3 +37,8 @@ output "github_app_secret_name" {
   value       = local.stage_github_app ? azurerm_key_vault_secret.github_app[0].name : ""
   description = "KV secret holding the dedicated GitHub App {appId,installationId,privateKey}; empty for shared-app orgs."
 }
+
+output "aks_uami_id" {
+  value       = azurerm_user_assigned_identity.aks.id
+  description = "ARM id of the org AKS control-plane UAMI (the aks composition templates this literally)."
+}
