@@ -14,6 +14,11 @@ locals {
   eso_uami_name        = "${var.org_name}-eso-uami"
   kv_name              = var.key_vault_name_override != "" ? var.key_vault_name_override : "${var.org_name}-${substr(sha256(var.subscription_id), 0, 6)}"
 
+  # AKS control-plane identity name. MUST match the aks composition's literal
+  # ARM id construction (Phase 6): .../resourceGroups/rg-kaos-{org}/providers/
+  # Microsoft.ManagedIdentity/userAssignedIdentities/{org}-aks-uami.
+  aks_uami_name = "${var.org_name}-aks-uami"
+
   # Secret id MUST match buildXGithubProviderParameters(): {org}-github-provider-credentials
   github_secret_name = "${var.org_name}-github-provider-credentials"
   stage_github_app   = var.github_app_id != ""
@@ -171,4 +176,34 @@ resource "azurerm_role_assignment" "eso_dns_contributor" {
   scope                = azurerm_resource_group.org.id
   role_definition_name = "DNS Zone Contributor"
   principal_id         = azurerm_user_assigned_identity.eso.principal_id
+}
+
+# Org-level AKS control-plane identity (Phase 6). Shared by all of the org's
+# AKS clusters (identity.type=UserAssigned in the aks composition). Network
+# Contributor lets the AKS cloud controller bind the reserved gateway PublicIP
+# in the org RG — granted here, once, instead of at runtime (zero-escalation).
+resource "azurerm_user_assigned_identity" "aks" {
+  name                = local.aks_uami_name
+  location            = var.location
+  resource_group_name = azurerm_resource_group.org.name
+  tags = {
+    Organization = var.org_name
+    ManagedBy    = "kaos-onboarding"
+    Purpose      = "aks-control-plane"
+  }
+}
+
+resource "azurerm_role_assignment" "aks_network_contributor" {
+  scope                = azurerm_resource_group.org.id
+  role_definition_name = "Network Contributor"
+  principal_id         = azurerm_user_assigned_identity.aks.principal_id
+}
+
+# Crossplane needs userAssignedIdentities/assign/action on this UAMI to create
+# AKS clusters that use it (Managed Identity Operator, resource-scoped —
+# mirrors crossplane_eso_fic_writer's resource-scoped pattern).
+resource "azurerm_role_assignment" "crossplane_aks_identity_operator" {
+  scope                = azurerm_user_assigned_identity.aks.id
+  role_definition_name = "Managed Identity Operator"
+  principal_id         = azurerm_user_assigned_identity.crossplane.principal_id
 }
