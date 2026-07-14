@@ -14,21 +14,31 @@ Identity plane provisioned per org (all in a single foundation resource group):
 | `azurerm_user_assigned_identity.eso`          | `{org}-eso-uami`                   | ESO workload identity; FIC subject owned by the azureprovider composition       |
 | `azurerm_key_vault.org`                       | `{org}-{hash6}`                    | TF-owned org Key Vault, RBAC-authorized, purge-protected                        |
 | `azurerm_key_vault_secret.github_app`         | `{org}-github-provider-credentials`| Dedicated GitHub App `{appId,installationId,privateKey}`; only when staged      |
-| `azurerm_role_definition.rg_lifecycle`        | `kaos-{org}-rg-lifecycle`          | Custom role: subscription-scoped RG create/read/delete (AKS per-cluster RGs)    |
-| `azurerm_role_assignment.crossplane_roles`    | —                                   | Subscription-scoped builtin provisioning roles on the crossplane UAMI          |
+| `azurerm_role_assignment.crossplane_network_rg` | —                                 | RG-scoped Network Contributor on the crossplane UAMI                           |
+| `azurerm_role_assignment.crossplane_dns_rg`   | —                                   | RG-scoped DNS Zone Contributor on the crossplane UAMI                          |
+| `azurerm_role_assignment.crossplane_aks_rg`   | —                                   | RG-scoped AKS Contributor on the crossplane UAMI (node RG caveat — see below)   |
+| `azurerm_role_assignment.crossplane_reader_rg` | —                                  | RG-scoped Reader on the crossplane UAMI (Observe read, incl. KV)                |
 | `azurerm_role_assignment.crossplane_eso_fic_writer` | —                             | FIC-writer grant scoped to the ESO UAMI only (composition manages its FIC)      |
 | `azurerm_role_assignment.eso_kv_officer`      | —                                   | Resource-scoped Key Vault Secrets Officer for ESO on the org KV                 |
 | `azurerm_role_assignment.eso_dns_contributor` | —                                   | RG-scoped DNS Zone Contributor for ESO                                          |
 
-This replaces the legacy subscription-scope Owner grant with subscription- and
-resource-scoped least-privilege roles.
+This replaces the legacy subscription-scope Owner grant, and the previous
+subscription-scoped provisioning roles + rg-lifecycle custom role, with grants scoped
+entirely to the org resource group (`rg-kaos-{org}`) — zero subscription-scoped grants
+for the crossplane identity. The Network+AKS+DNS compositions place all resources in this
+RG and create no resource groups of their own, so no RG-lifecycle role is needed.
+
+**Node-RG caveat**: AKS auto-creates a `MC_*` node resource group outside `rg-kaos-{org}`.
+Whether the crossplane identity needs any permission there to create the cluster is
+unknown and settled only by a live test; if `AuthorizationFailed` is observed on the node
+RG, a follow-up will add the minimal grant there.
 
 ## Prerequisites
 
 - An Azure subscription (`subscription_id`) and its AD tenant (`tenant_id`).
-- Run by a principal with `Microsoft.Authorization/roleDefinitions/write` at subscription scope
-  — i.e. **Owner** or **User Access Administrator** — since the module creates a custom role
-  definition and grants both builtin and custom role assignments.
+- Run by a principal with role-assignment write access on the org resource group
+  (`rg-kaos-{org}`) — e.g. **Owner** or **User Access Administrator** scoped to the RG (or
+  subscription) — since the module grants builtin role assignments there.
 - `az login` to the target subscription before running Terraform:
   ```bash
   az login
@@ -88,12 +98,13 @@ the KV hash, so no fixed golden vector for `key_vault_name`).
 
 ## Role-set extension rule
 
-`local.crossplane_subscription_roles` (Network Contributor, Azure Kubernetes Service Contributor
-Role, DNS Zone Contributor, Key Vault Contributor) is the working set derived from the
-composition audit. Extend this list **only** on a verified `AuthorizationFailed` error observed
-during a live Stage-1/Stage-2 run — never speculatively. Record every addition here:
+The crossplane UAMI's RG-scoped role set (Network Contributor, DNS Zone Contributor, Azure
+Kubernetes Service Contributor Role, Reader) is the working set derived from the composition
+audit, all scoped to `rg-kaos-{org}`. Extend this list **only** on a verified
+`AuthorizationFailed` error observed during a live run — never speculatively. Record every
+addition here:
 
-- (none yet — initial working set as of this module's authoring)
+- (none yet — initial RG-scoped working set as of this module's authoring)
 
 ## Security
 

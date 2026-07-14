@@ -17,8 +17,6 @@ locals {
   # Secret id MUST match buildXGithubProviderParameters(): {org}-github-provider-credentials
   github_secret_name = "${var.org_name}-github-provider-credentials"
   stage_github_app   = var.github_app_id != ""
-
-  subscription_scope = "/subscriptions/${var.subscription_id}"
 }
 
 resource "azurerm_resource_group" "org" {
@@ -116,50 +114,42 @@ resource "azurerm_key_vault_secret" "github_app" {
 
 # ---------------------------------------------------------------------------
 # Least-priv grants (replaces the legacy subscription-scope Owner).
-# Subscription scope is required for the provisioning roles because the AKS
-# composition creates a per-cluster resource group (matchControllerRef) —
-# the Azure analogue of GCP's project-scoped operator_project_roles.
+# All crossplane provisioning grants scoped to the org RG (rg-kaos-{org}).
+# Network+AKS+DNS all create their resources IN this RG (post-A4 compositions);
+# nothing creates a resource group, so no subscription scope and no rg-lifecycle role.
 # ---------------------------------------------------------------------------
 
-# Custom role: RG lifecycle only (no builtin covers create/delete RG without Contributor).
-resource "azurerm_role_definition" "rg_lifecycle" {
-  name        = "kaos-${var.org_name}-rg-lifecycle"
-  scope       = local.subscription_scope
-  description = "KAOS ${var.org_name}: create/read/delete resource groups (AKS per-cluster RGs)."
-  permissions {
-    actions = [
-      "Microsoft.Resources/subscriptions/resourceGroups/read",
-      "Microsoft.Resources/subscriptions/resourceGroups/write",
-      "Microsoft.Resources/subscriptions/resourceGroups/delete",
-    ]
-  }
-  assignable_scopes = [local.subscription_scope]
-}
-
-locals {
-  # Provisioning-only builtin roles for the crossplane UAMI, subscription scope.
-  # Working set from the composition audit (network/VNet+subnets, AKS cluster,
-  # DNS zone+records, Key Vault mgmt). Extend ONLY on a verified AuthorizationFailed
-  # during Stage-1/Stage-2 live runs; record every addition in the README.
-  crossplane_subscription_roles = [
-    "Network Contributor",
-    "Azure Kubernetes Service Contributor Role",
-    "DNS Zone Contributor",
-    "Key Vault Contributor",
-  ]
-}
-
-resource "azurerm_role_assignment" "crossplane_roles" {
-  for_each             = toset(local.crossplane_subscription_roles)
-  scope                = local.subscription_scope
-  role_definition_name = each.value
+resource "azurerm_role_assignment" "crossplane_network_rg" {
+  scope                = azurerm_resource_group.org.id
+  role_definition_name = "Network Contributor"
   principal_id         = azurerm_user_assigned_identity.crossplane.principal_id
 }
 
-resource "azurerm_role_assignment" "crossplane_rg_lifecycle" {
-  scope              = local.subscription_scope
-  role_definition_id = azurerm_role_definition.rg_lifecycle.role_definition_resource_id
-  principal_id       = azurerm_user_assigned_identity.crossplane.principal_id
+resource "azurerm_role_assignment" "crossplane_dns_rg" {
+  scope                = azurerm_resource_group.org.id
+  role_definition_name = "DNS Zone Contributor"
+  principal_id         = azurerm_user_assigned_identity.crossplane.principal_id
+}
+
+# NODE-RG CAVEAT: AKS auto-creates a `MC_*` node resource group outside rg-kaos-{org}.
+# Whether the crossplane identity needs any permission there to create the cluster is
+# UNKNOWN and settled only by the live A-4d test. This grant is RG-scoped only
+# (aspirational zero-subscription end-state); if A-4d shows AuthorizationFailed on the
+# node RG, a follow-up will add the minimal grant there. Do not pre-emptively widen this.
+resource "azurerm_role_assignment" "crossplane_aks_rg" {
+  scope                = azurerm_resource_group.org.id
+  role_definition_name = "Azure Kubernetes Service Contributor Role"
+  principal_id         = azurerm_user_assigned_identity.crossplane.principal_id
+}
+
+# KV is Observe-only (crossplane never writes it) but Observe still needs vaults/read,
+# which the Contributor roles above don't cover. Reader @ RG grants */read incl. KV read.
+# (Live-verify in A-4d that Reader satisfies provider-azure's Observe GET; if a narrower
+#  "Key Vault Reader" is preferred, swap the role name — same scope.)
+resource "azurerm_role_assignment" "crossplane_reader_rg" {
+  scope                = azurerm_resource_group.org.id
+  role_definition_name = "Reader"
+  principal_id         = azurerm_user_assigned_identity.crossplane.principal_id
 }
 
 # FIC-writer: composition manages the ESO FIC on this ONE identity (wi_binder analogue).
