@@ -157,6 +157,18 @@ resource "azurerm_role_assignment" "crossplane_reader_rg" {
   principal_id         = azurerm_user_assigned_identity.crossplane.principal_id
 }
 
+# KV data plane: the broker's federation verify and the KAOS credential pull read
+# the staged GitHub App secret AS the crossplane identity (GCP parity: the
+# {org}-crossplane SA reads the org GitHub secret). Reader above covers only the
+# management plane — RBAC-mode secret reads need an explicit data-plane role.
+# Read-only, resource-scoped to the org vault (live-verified on kaos-io 2026-07-24:
+# without this the broker's Key Vault read fails with HTTP 403).
+resource "azurerm_role_assignment" "crossplane_kv_secrets_user" {
+  scope                = azurerm_key_vault.org.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_user_assigned_identity.crossplane.principal_id
+}
+
 # FIC-writer: composition manages the ESO FIC on this ONE identity (wi_binder analogue).
 resource "azurerm_role_assignment" "crossplane_eso_fic_writer" {
   scope                = azurerm_user_assigned_identity.eso.id
