@@ -432,22 +432,30 @@ resource "google_service_account_iam_member" "operator_view_gke" {
   member             = "serviceAccount:${google_service_account.crossplane.email}"
 }
 
-# --- Workload-Identity binder (resource-scoped to the eso/dns SAs only) ---
-# The three GKE WI bindings (KSA -> {org}-gcp-eso-sa / -dns-sa) reference the
-# {projectId}.svc.id.goog pool, which GCP only materializes after the first GKE
-# cluster exists. They therefore CANNOT be created at greenfield onboarding time;
-# the KubePool `system` / `observability-cost` compositions create them post-cluster
-# (level-triggered, self-healing). To let the operator's standing {org}-crossplane SA
-# create EXACTLY those bindings and nothing more, grant it get/setIamPolicy on ONLY
-# the three target SA resources (eso, dns, gke) via this minimal custom role — the role's
-# POWERS are unchanged (still just get/setIamPolicy); only its TARGETS grow by the gke SA.
+# --- Workload-Identity binder (resource-scoped to the eso/dns/gke/ci SAs only) ---
+# The four GKE WI bindings (KSA -> {org}-gcp-eso-sa / -dns-sa / -gke-sa / -ci-sa)
+# reference the {projectId}.svc.id.goog pool, which GCP only materializes after the
+# first GKE cluster exists. They therefore CANNOT be created at greenfield onboarding
+# time; the KubePool `system` / `observability-cost` compositions create the eso/dns/gke
+# bindings post-cluster (level-triggered, self-healing), and a future composition binds
+# the ci SA's KSA the same way once it exists (PRD-REG-994: the CI push SA needs a
+# KSA<->GSA binding too, for the same post-cluster reason). To let the operator's
+# standing {org}-crossplane SA create EXACTLY those bindings and nothing more, grant it
+# get/setIamPolicy on ONLY the four target SA resources (eso, dns, gke, ci) via this
+# minimal custom role — the role's POWERS are unchanged (still just get/setIamPolicy);
+# only its TARGETS grow, most recently by the ci SA (PRD-REG-994).
 #
-# Blast radius (security): get/setIamPolicy on three low-privilege runtime SAs in the
+# Blast radius (security): get/setIamPolicy on four low-privilege runtime SAs in the
 # client's own project (INV-GCP-01). Cannot create/delete/modify any SA, cannot touch
-# project IAM, cannot reach any other SA. The only capability reachable by abusing it
-# (granting self impersonation on eso/dns/gke SA) that crossplane does not already hold is
-# roles/monitoring.viewer (read-only) — crossplane already holds dns.admin + broader
-# Secret Manager + storage.admin + container.admin. Non-escalating; documented for the
+# project IAM, cannot reach any other SA. Self-impersonating eso/dns/gke via this role
+# reaches nothing crossplane doesn't already hold except roles/monitoring.viewer
+# (read-only) — crossplane already holds dns.admin + broader Secret Manager +
+# storage.admin + container.admin. Self-impersonating the ci SA (PRD-REG-994) also
+# reaches roles/artifactregistry.writer — push/pull on every Artifact Registry
+# repository in the project, which crossplane's own kubecoreArtifactRegistryProvisioner
+# role does NOT include (repository lifecycle only, no artifact read/write). That is a
+# real, project-scoped capability gain, not merely cosmetic — it still does not reach
+# project IAM, other SAs, or anything outside Artifact Registry. Documented for the
 # security team alongside DEC-GCP-03.
 resource "google_project_iam_custom_role" "wi_binder" {
   project     = var.gcp_project_id
