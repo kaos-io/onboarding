@@ -27,6 +27,11 @@ output "gke_sa_email" {
   description = "GKE-developer SA ({org}-gcp-gke-sa) holding container.developer + compute.viewer; adopted Observe-only by the gcpprovider composition and bound to the {org}-gke-sa KSA per pool."
 }
 
+output "ci_sa_email" {
+  value       = local.ci_sa_email
+  description = "CI push SA ({org}-gcp-ci-sa) holding artifactregistry.writer (PRD-REG-994 Phase 2). Consumed by the Phase 2 composition to create the Workload Identity binding for the CI build KSA in {project}-ci; the binding itself is created by the composition, not here, because the WI pool doesn't exist until the first GKE cluster."
+}
+
 output "github_app_secret_id" {
   value       = local.stage_github_app ? google_secret_manager_secret.github_app[0].secret_id : ""
   description = "GSM secret id holding the dedicated GitHub App {appId,privateKey}; empty for shared-app orgs."

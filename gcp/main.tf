@@ -18,6 +18,8 @@ locals {
   node_sa_email       = "${var.org_name}-node@${var.gcp_project_id}.iam.gserviceaccount.com"
   # account_id "{org}-gcp-gke-sa" = 11-char suffix; org_name <= 19 => <= 30 (GCP cap). Never truncate org_name.
   gke_sa_email = "${var.org_name}-gcp-gke-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
+  # account_id "{org}-gcp-ci-sa" = 10-char suffix; org_name <= 19 => <= 29 (GCP cap). Never truncate org_name.
+  ci_sa_email = "${var.org_name}-gcp-ci-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
 
   wif_principal = "principal://iam.googleapis.com/projects/${var.gcp_project_number}/locations/global/workloadIdentityPools/${local.wif_pool_id}/subject/${local.zitadel_sub}"
 
