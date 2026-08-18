@@ -18,6 +18,8 @@ locals {
   node_sa_email       = "${var.org_name}-node@${var.gcp_project_id}.iam.gserviceaccount.com"
   # account_id "{org}-gcp-gke-sa" = 11-char suffix; org_name <= 19 => <= 30 (GCP cap). Never truncate org_name.
   gke_sa_email = "${var.org_name}-gcp-gke-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
+  # account_id "{org}-gcp-ci-sa" = 10-char suffix; org_name <= 19 => <= 29 (GCP cap). Never truncate org_name.
+  ci_sa_email = "${var.org_name}-gcp-ci-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
 
   wif_principal = "principal://iam.googleapis.com/projects/${var.gcp_project_number}/locations/global/workloadIdentityPools/${local.wif_pool_id}/subject/${local.zitadel_sub}"
 
@@ -52,6 +54,8 @@ locals {
     "servicenetworking.googleapis.com",
     # PRD-247 GCP ML pricing exporter: Cloud Billing price-catalog API (SKU pricing).
     "cloudbilling.googleapis.com",
+    # PRD-REG-994 Phase 2: per-KubeProject Artifact Registry repositories.
+    "artifactregistry.googleapis.com",
   ]
 }
 
@@ -145,6 +149,37 @@ resource "google_project_iam_custom_role" "crossplane_secret_manager" {
 resource "google_project_iam_member" "crossplane_secret_manager" {
   project = var.gcp_project_id
   role    = google_project_iam_custom_role.crossplane_secret_manager.name
+  member  = "serviceAccount:${google_service_account.crossplane.email}"
+}
+
+# PRD-REG-994 Phase 2: the crossplane (provisioning) SA creates one Artifact Registry
+# repository per KubeProject in the org's own GCP project. Repository lifecycle only
+# (create/get/update/delete/list) — Option C (PRD-REG-994): repositories are created
+# dynamically per KubeProject, so there is no Terraform-time resource to scope a
+# repository-level setIamPolicy grant against. Granting it would have to be
+# project-scoped, letting the holder open every repository present and future to any
+# principal — a worse escalation than the per-repository isolation buys. Pull/push
+# authorization is therefore granted at the project level instead (see the node SA's
+# artifactregistry.reader and the ci SA's artifactregistry.writer, below), never via
+# repository IAM policies. Distinct from kubecoreSecretManagerProvisioner (above): same
+# shape, different service.
+resource "google_project_iam_custom_role" "crossplane_artifact_registry" {
+  project     = var.gcp_project_id
+  role_id     = "kubecoreArtifactRegistryProvisioner"
+  title       = "KubeCore Artifact Registry Provisioner"
+  description = "Crossplane SA: create/get/update/delete/list Artifact Registry repositories; no setIamPolicy (least-privilege, PRD-REG-994)."
+  permissions = [
+    "artifactregistry.repositories.create",
+    "artifactregistry.repositories.get",
+    "artifactregistry.repositories.update",
+    "artifactregistry.repositories.delete",
+    "artifactregistry.repositories.list",
+  ]
+}
+
+resource "google_project_iam_member" "crossplane_artifact_registry" {
+  project = var.gcp_project_id
+  role    = google_project_iam_custom_role.crossplane_artifact_registry.name
   member  = "serviceAccount:${google_service_account.crossplane.email}"
 }
 
@@ -322,13 +357,19 @@ resource "google_project_iam_member" "node_roles" {
   # GKE custom-node-SA documented minimum (Google "use least privilege SA for nodes"):
   # logWriter + metricWriter + monitoring.viewer + stackdriver.resourceMetadata.writer.
   # Without the latter two the gke node monitoring/metadata agents degrade silently
-  # (nodes register but system components are unhealthy). artifactregistry.reader is
-  # intentionally NOT included — images come from in-cluster Zot / ACR, not GCP AR (D-13).
+  # (nodes register but system components are unhealthy). artifactregistry.reader:
+  # PRD-REG-994 Phase 2 revises D-13 — GAR now backs KubeApp images (kubelet pulls what
+  # in-cluster CI pushes) alongside in-cluster Zot. The grant is project-level and
+  # deliberate: repositories are per-KubeProject (Option C, PRD-REG-994), but there is
+  # no Terraform-time per-repository resource to scope IAM against, so pull is
+  # org-scoped rather than KubeProject-scoped. Still a large improvement over today,
+  # where Zot's anonymousPolicy:["read"] on "**" makes pull unauthenticated-readable.
   for_each = toset([
     "roles/logging.logWriter",
     "roles/monitoring.metricWriter",
     "roles/monitoring.viewer",
     "roles/stackdriver.resourceMetadata.writer",
+    "roles/artifactregistry.reader",
   ])
   project = var.gcp_project_id
   role    = each.value
@@ -340,6 +381,31 @@ resource "google_service_account_iam_member" "operator_actas_node" {
   service_account_id = google_service_account.node.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.crossplane.email}"
+}
+
+# --- CI push SA (org-shared) ---
+# PRD-REG-994 Phase 2: in-cluster CI pushes application images to Artifact Registry.
+# Dedicated per invariant I1 (one SA, one job) — granting artifactregistry.writer on the
+# shared eso-sa or crossplane SA would pile a live-push capability onto SAs with other
+# jobs. Two-step binding, same pattern as eso/dns/gke below: Terraform here creates the
+# SA and authorises the crossplane SA to bind it (wi_binder target, below); the actual
+# KSA<->GSA Workload Identity binding is created later by a composition, because the
+# {projectId}.svc.id.goog WI pool does not exist until the first GKE cluster does.
+resource "google_service_account" "ci" {
+  project      = var.gcp_project_id
+  account_id   = "${var.org_name}-gcp-ci-sa"
+  display_name = "CI push SA for ${var.org_name}"
+  depends_on   = [google_project_service.required]
+}
+
+# roles/artifactregistry.writer is a predefined role that includes read, so this SA can
+# push and pull without a custom role. Project-level grant, same Option C rationale as
+# the node SA's artifactregistry.reader above: no per-repository Terraform-time resource
+# exists to scope against, so push is org-scoped rather than KubeProject-scoped.
+resource "google_project_iam_member" "ci_artifact_registry_writer" {
+  project = var.gcp_project_id
+  role    = "roles/artifactregistry.writer"
+  member  = "serviceAccount:${google_service_account.ci.email}"
 }
 
 # The provisioning (crossplane) SA must READ the eso/dns SAs to OBSERVE/adopt them:
@@ -368,22 +434,30 @@ resource "google_service_account_iam_member" "operator_view_gke" {
   member             = "serviceAccount:${google_service_account.crossplane.email}"
 }
 
-# --- Workload-Identity binder (resource-scoped to the eso/dns SAs only) ---
-# The three GKE WI bindings (KSA -> {org}-gcp-eso-sa / -dns-sa) reference the
-# {projectId}.svc.id.goog pool, which GCP only materializes after the first GKE
-# cluster exists. They therefore CANNOT be created at greenfield onboarding time;
-# the KubePool `system` / `observability-cost` compositions create them post-cluster
-# (level-triggered, self-healing). To let the operator's standing {org}-crossplane SA
-# create EXACTLY those bindings and nothing more, grant it get/setIamPolicy on ONLY
-# the three target SA resources (eso, dns, gke) via this minimal custom role — the role's
-# POWERS are unchanged (still just get/setIamPolicy); only its TARGETS grow by the gke SA.
+# --- Workload-Identity binder (resource-scoped to the eso/dns/gke/ci SAs only) ---
+# The four GKE WI bindings (KSA -> {org}-gcp-eso-sa / -dns-sa / -gke-sa / -ci-sa)
+# reference the {projectId}.svc.id.goog pool, which GCP only materializes after the
+# first GKE cluster exists. They therefore CANNOT be created at greenfield onboarding
+# time; the KubePool `system` / `observability-cost` compositions create the eso/dns/gke
+# bindings post-cluster (level-triggered, self-healing), and a future composition binds
+# the ci SA's KSA the same way once it exists (PRD-REG-994: the CI push SA needs a
+# KSA<->GSA binding too, for the same post-cluster reason). To let the operator's
+# standing {org}-crossplane SA create EXACTLY those bindings and nothing more, grant it
+# get/setIamPolicy on ONLY the four target SA resources (eso, dns, gke, ci) via this
+# minimal custom role — the role's POWERS are unchanged (still just get/setIamPolicy);
+# only its TARGETS grow, most recently by the ci SA (PRD-REG-994).
 #
-# Blast radius (security): get/setIamPolicy on three low-privilege runtime SAs in the
+# Blast radius (security): get/setIamPolicy on four low-privilege runtime SAs in the
 # client's own project (INV-GCP-01). Cannot create/delete/modify any SA, cannot touch
-# project IAM, cannot reach any other SA. The only capability reachable by abusing it
-# (granting self impersonation on eso/dns/gke SA) that crossplane does not already hold is
-# roles/monitoring.viewer (read-only) — crossplane already holds dns.admin + broader
-# Secret Manager + storage.admin + container.admin. Non-escalating; documented for the
+# project IAM, cannot reach any other SA. Self-impersonating eso/dns/gke via this role
+# reaches nothing crossplane doesn't already hold except roles/monitoring.viewer
+# (read-only) — crossplane already holds dns.admin + broader Secret Manager +
+# storage.admin + container.admin. Self-impersonating the ci SA (PRD-REG-994) also
+# reaches roles/artifactregistry.writer — push/pull on every Artifact Registry
+# repository in the project, which crossplane's own kubecoreArtifactRegistryProvisioner
+# role does NOT include (repository lifecycle only, no artifact read/write). That is a
+# real, project-scoped capability gain, not merely cosmetic — it still does not reach
+# project IAM, other SAs, or anything outside Artifact Registry. Documented for the
 # security team alongside DEC-GCP-03.
 resource "google_project_iam_custom_role" "wi_binder" {
   project     = var.gcp_project_id
@@ -410,6 +484,15 @@ resource "google_service_account_iam_member" "crossplane_wi_binder_dns" {
 
 resource "google_service_account_iam_member" "crossplane_wi_binder_gke" {
   service_account_id = google_service_account.gke.name
+  role               = google_project_iam_custom_role.wi_binder.name
+  member             = "serviceAccount:${google_service_account.crossplane.email}"
+}
+
+# PRD-REG-994 Phase 2: adds the ci SA as a fourth wi_binder target so the crossplane SA
+# can later create the KSA<->GSA Workload Identity binding for in-cluster CI push. The
+# binder role's powers are unchanged (still just get/setIamPolicy) — only its targets grow.
+resource "google_service_account_iam_member" "crossplane_wi_binder_ci" {
+  service_account_id = google_service_account.ci.name
   role               = google_project_iam_custom_role.wi_binder.name
   member             = "serviceAccount:${google_service_account.crossplane.email}"
 }
