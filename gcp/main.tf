@@ -20,6 +20,8 @@ locals {
   gke_sa_email = "${var.org_name}-gcp-gke-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
   # account_id "{org}-gcp-ci-sa" = 10-char suffix; org_name <= 19 => <= 29 (GCP cap). Never truncate org_name.
   ci_sa_email = "${var.org_name}-gcp-ci-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
+  # account_id "{org}-gcp-gar-read-sa" = 16-char suffix; org_name <= 14 => <= 30 (GCP cap). Never truncate org_name.
+  gar_read_sa_email = "${var.org_name}-gcp-gar-read-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
 
   wif_principal = "principal://iam.googleapis.com/projects/${var.gcp_project_number}/locations/global/workloadIdentityPools/${local.wif_pool_id}/subject/${local.zitadel_sub}"
 
@@ -396,6 +398,28 @@ resource "google_service_account" "ci" {
   account_id   = "${var.org_name}-gcp-ci-sa"
   display_name = "CI push SA for ${var.org_name}"
   depends_on   = [google_project_service.required]
+}
+
+# --- GAR read SA (org-shared, PRD-1016 F-08 / kubecore-operator#1116) ---
+# Off-cluster consumers (MeluXina Slurm jobs pulling step images via Apptainer) have no
+# GCP identity of their own; the in-cluster submit pod mints them a short-lived access
+# token by impersonating THIS SA through Workload Identity. Read-only by construction —
+# artifactregistry.reader and nothing else — so a token that leaks from a job
+# environment can only pull images. The Workload Identity binding for the ML env's
+# argo-workflow KSA is created by the projectenvmlstack composition (same shape as the
+# ci SA binding: the WI pool doesn't exist until the first GKE cluster). Project-level
+# grant, same Option C rationale as the node SA's reader above.
+resource "google_service_account" "gar_read" {
+  project      = var.gcp_project_id
+  account_id   = "${var.org_name}-gcp-gar-read-sa"
+  display_name = "GAR read SA for ${var.org_name} (off-cluster image pulls)"
+  depends_on   = [google_project_service.required]
+}
+
+resource "google_project_iam_member" "gar_read_artifact_registry_reader" {
+  project = var.gcp_project_id
+  role    = "roles/artifactregistry.reader"
+  member  = "serviceAccount:${google_service_account.gar_read.email}"
 }
 
 # roles/artifactregistry.writer is a predefined role that includes read, so this SA can
