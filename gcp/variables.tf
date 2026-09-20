@@ -49,20 +49,20 @@ variable "observability_namespace" {
 variable "github_app_id" {
   type        = string
   default     = ""
-  description = "Dedicated GitHub App ID. When empty, no GitHub App secret is staged (shared-app org)."
+  description = "DEPRECATED: leave empty. KAOS now receives the key from GitHub and writes this secret itself. Only set this for the legacy manual flow, where it stages a dedicated GitHub App ID. When empty, no GitHub App secret is staged by this module."
 }
 
 variable "github_app_installation_id" {
   type        = string
   default     = ""
-  description = "Dedicated GitHub App installation ID for this org. Staged alongside github_app_id so ESO consumers (ArgoCD repo-creds/push-creds) can resolve it; without it the ExternalSecret sync fails atomically."
+  description = "DEPRECATED: leave empty. KAOS now receives the key from GitHub and writes this secret itself. Only set this for the legacy manual flow, alongside github_app_id and github_app_private_key so ESO consumers (ArgoCD repo-creds/push-creds) can resolve it; without it the ExternalSecret sync fails atomically."
 }
 
 variable "github_app_private_key" {
   type        = string
   default     = ""
   sensitive   = true
-  description = "Dedicated GitHub App private key (PEM). Staged alongside github_app_id in GCP Secret Manager."
+  description = "DEPRECATED: leave empty. KAOS now receives the key from GitHub and writes this secret itself. Only set this for the legacy manual flow. Staged alongside github_app_id in GCP Secret Manager."
 }
 
 variable "enable_meluxina_ssh_key" {

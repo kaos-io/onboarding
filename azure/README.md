@@ -13,11 +13,12 @@ Identity plane provisioned per org (all in a single foundation resource group):
 | `azurerm_user_assigned_identity.crossplane`   | `{org}-crossplane`                 | Standing provisioning identity; federates via Zitadel FIC (broker audience)     |
 | `azurerm_user_assigned_identity.eso`          | `{org}-eso-uami`                   | ESO workload identity; FIC subject owned by the azureprovider composition       |
 | `azurerm_key_vault.org`                       | `{org}-{hash6}`                    | TF-owned org Key Vault, RBAC-authorized, purge-protected                        |
-| `azurerm_key_vault_secret.github_app`         | `{org}-github-provider-credentials`| Dedicated GitHub App `{appId,installationId,privateKey}`; only when staged      |
+| `azurerm_key_vault_secret.github_app`         | `{org}-github-provider-credentials`| Dedicated GitHub App `{appId,installationId,privateKey}`; legacy manual flow only, only when staged here |
 | `azurerm_role_assignment.crossplane_network_rg` | —                                 | RG-scoped Network Contributor on the crossplane UAMI                           |
 | `azurerm_role_assignment.crossplane_dns_rg`   | —                                   | RG-scoped DNS Zone Contributor on the crossplane UAMI                          |
 | `azurerm_role_assignment.crossplane_aks_rg`   | —                                   | RG-scoped AKS Contributor on the crossplane UAMI (node RG caveat — see below)   |
 | `azurerm_role_assignment.crossplane_reader_rg` | —                                  | RG-scoped Reader on the crossplane UAMI (Observe read, incl. KV)                |
+| `azurerm_role_assignment.crossplane_kv_secrets_officer` | —                         | Resource-scoped Key Vault Secrets Officer on the org KV for the crossplane UAMI (the token-broker writes the GitHub App credential as this identity) |
 | `azurerm_role_assignment.crossplane_eso_fic_writer` | —                             | FIC-writer grant scoped to the ESO UAMI only (composition manages its FIC)      |
 | `azurerm_role_assignment.eso_kv_officer`      | —                                   | Resource-scoped Key Vault Secrets Officer for ESO on the org KV                 |
 | `azurerm_role_assignment.eso_dns_contributor` | —                                   | RG-scoped DNS Zone Contributor for ESO                                          |
@@ -54,14 +55,13 @@ cd onboarding/azure
 # Save the terraform.tfvars the KAOS dashboard generated (see terraform.tfvars.example) here, then:
 terraform init
 terraform apply -var-file=terraform.tfvars
-
-# Dedicated-app orgs: pass the GitHub App id/installation/key at apply time (kept out of
-# terraform.tfvars and out of state — do NOT put PEM material in the tfvars file):
-#   terraform apply -var-file=terraform.tfvars \
-#     -var "github_app_id=123456" \
-#     -var "github_app_installation_id=987654" \
-#     -var "github_app_private_key=$(cat /path/to/key.pem)"
 ```
+
+You do not need to supply a GitHub App key. KAOS receives it directly from GitHub when you
+create the App, and writes it into your Key Vault itself once your cloud account is verified.
+The `github_app_id`, `github_app_installation_id` and `github_app_private_key` variables are
+deprecated and kept only for orgs still on the older manual flow, where a private key was
+passed at apply time; leave them empty on a new onboarding run.
 
 Re-running is a no-op (idempotent).
 
@@ -108,9 +108,17 @@ addition here:
 
 ## Security
 
-- The onboarding runner needs only a transient Key Vault Secrets Officer grant to stage the
-  GitHub App secret at apply time; no long-lived elevated credential is created for it.
-- The dedicated GitHub App private key is staged **write-only** (`value_wo` /
+- The GitHub App private key is delivered by GitHub straight to the KAOS control plane when
+  you create the App, held there until your cloud account is federated and verified, then
+  written into `{org}-github-provider-credentials` in this Key Vault by the KAOS token-broker,
+  acting as the `{org}-crossplane` UAMI, and removed from the KAOS side. That is why the
+  crossplane UAMI holds Key Vault Secrets Officer (write) on this vault, resource-scoped, not
+  Reader or Secrets User.
+- Legacy manual flow only: the onboarding runner needs a transient Key Vault Secrets Officer
+  grant to stage the GitHub App secret at apply time via the deprecated `github_app_*`
+  variables; no long-lived elevated credential is created for it. When those variables are
+  left empty, as on a new onboarding run, no secret is staged this way.
+- The legacy dedicated GitHub App private key is staged **write-only** (`value_wo` /
   `value_wo_version`) — it reaches Key Vault but is never persisted in Terraform state.
 - No service-principal secrets or static cloud keys are created. The control plane
   authenticates keyless via Zitadel-issued OIDC tokens federated into the `{org}-crossplane`

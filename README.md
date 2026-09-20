@@ -14,7 +14,12 @@ service accounts, narrowed IAM + Workload-Identity bindings) so the KAOS control
 ## Security
 - Keyless: no service-account keys are created or exported. The control plane impersonates
   `<org>-crossplane` only via a deterministic federated subject.
-- Your GitHub App private key (dedicated-app orgs) is written **only** to your GCP Secret
-  Manager and is kept out of Terraform state (`secret_data_wo`). It never transits the KAOS UI.
+- Your GitHub App private key is delivered by GitHub straight to the KAOS control plane when
+  you create the App, held there until your cloud account is federated and verified, then
+  written into your own secret store (`<org>-github-provider-credentials`) by the same
+  `<org>-crossplane` identity this module federates, and removed from the KAOS side. It never
+  transits this Terraform or the KAOS UI. Legacy: the `github_app_*` input variables in `gcp/`
+  and `azure/` still exist, deprecated and empty by default, for orgs onboarded before this
+  changed.
 - Terraform state is yours and stays local by default; configure a remote encrypted backend
   if you prefer. No secret material is stored in state.
