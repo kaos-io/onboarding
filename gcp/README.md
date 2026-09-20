@@ -29,10 +29,13 @@ export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)
 # Save the terraform.tfvars the KAOS UI generated (see terraform.tfvars.example) here, then:
 terraform init
 terraform apply -var-file=terraform.tfvars
-
-# Dedicated-app orgs: pass the GitHub App private key locally (kept out of state & UI):
-#   terraform apply -var-file=terraform.tfvars -var="github_app_private_key=$(cat ./your-app.pem)"
 ```
+
+You do not need to supply a GitHub App key. KAOS receives it directly from GitHub when you
+create the App, and writes it to your Secret Manager itself once your cloud account is
+verified. The `github_app_id`, `github_app_installation_id` and `github_app_private_key`
+variables are deprecated and kept only for orgs still on the older manual flow, where a
+private key was passed at apply time; leave them empty on a new onboarding run.
 
 Creates a per-org WIF pool/provider `<org>-kaosid` and the `<org>-crossplane / -gcp-eso-sa /
 -gcp-dns-sa / -node` service accounts with narrowed roles. Re-running is a no-op (idempotent).

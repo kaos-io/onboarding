@@ -161,12 +161,23 @@ resource "azurerm_role_assignment" "crossplane_reader_rg" {
 # the staged GitHub App secret AS the crossplane identity (GCP parity: the
 # {org}-crossplane SA reads the org GitHub secret). Reader above covers only the
 # management plane — RBAC-mode secret reads need an explicit data-plane role.
-# Read-only, resource-scoped to the org vault (live-verified on kaos-io 2026-07-24:
-# without this the broker's Key Vault read fails with HTTP 403).
-resource "azurerm_role_assignment" "crossplane_kv_secrets_user" {
+# Resource-scoped to the org vault (live-verified on kaos-io 2026-07-24: without
+# this the broker's Key Vault read fails with HTTP 403).
+#
+# Raised from "Key Vault Secrets User" (read-only) to "Key Vault Secrets Officer"
+# (read+write): the KAOS token-broker now writes {org}-github-provider-credentials
+# as this identity, after cloud federation is verified, instead of a human staging
+# it through this module's github_app_* variables. Still scoped to the org vault
+# only, not the resource group or subscription.
+resource "azurerm_role_assignment" "crossplane_kv_secrets_officer" {
   scope                = azurerm_key_vault.org.id
-  role_definition_name = "Key Vault Secrets User"
+  role_definition_name = "Key Vault Secrets Officer"
   principal_id         = azurerm_user_assigned_identity.crossplane.principal_id
+}
+
+moved {
+  from = azurerm_role_assignment.crossplane_kv_secrets_user
+  to   = azurerm_role_assignment.crossplane_kv_secrets_officer
 }
 
 # FIC-writer: composition manages the ESO FIC on this ONE identity (wi_binder analogue).
