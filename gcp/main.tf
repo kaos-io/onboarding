@@ -126,6 +126,11 @@ resource "google_project_iam_member" "operator_roles" {
 # (no privilege-delegation power; security-clean). Distinct from kubecoreEsoSecretWriter
 # (the eso-sa's narrower runtime push/pull role).
 resource "google_project_iam_custom_role" "crossplane_secret_manager" {
+  # The IAM API must be on before a role can be read or created. Without this the
+  # provider races the enablement on a brand-new project and fails with
+  # SERVICE_DISABLED, which it reports as "must be undeleted" (seen 2026-09-28).
+  depends_on = [google_project_service.required]
+
   project     = var.gcp_project_id
   role_id     = "kubecoreSecretManagerProvisioner"
   title       = "KubeCore Secret Manager Provisioner"
@@ -164,6 +169,11 @@ resource "google_project_iam_member" "crossplane_secret_manager" {
 # repository IAM policies. Distinct from kubecoreSecretManagerProvisioner (above): same
 # shape, different service.
 resource "google_project_iam_custom_role" "crossplane_artifact_registry" {
+  # The IAM API must be on before a role can be read or created. Without this the
+  # provider races the enablement on a brand-new project and fails with
+  # SERVICE_DISABLED, which it reports as "must be undeleted" (seen 2026-09-28).
+  depends_on = [google_project_service.required]
+
   project     = var.gcp_project_id
   role_id     = "kubecoreArtifactRegistryProvisioner"
   title       = "KubeCore Artifact Registry Provisioner"
@@ -194,6 +204,11 @@ resource "google_service_account" "eso" {
 # Secret Manager: ESO PushSecret needs create/get + version add/access, NOT delete → custom role.
 # roles/secretmanager.secretCreator does not exist in GCP (returns 400 in live e2e); covered by .secrets.create below.
 resource "google_project_iam_custom_role" "eso_secret_writer" {
+  # The IAM API must be on before a role can be read or created. Without this the
+  # provider races the enablement on a brand-new project and fails with
+  # SERVICE_DISABLED, which it reports as "must be undeleted" (seen 2026-09-28).
+  depends_on = [google_project_service.required]
+
   project     = var.gcp_project_id
   role_id     = "kubecoreEsoSecretWriter"
   title       = "KubeCore ESO Secret Writer"
@@ -460,6 +475,11 @@ resource "google_service_account_iam_member" "operator_view_gke" {
 # project IAM, other SAs, or anything outside Artifact Registry. Documented for the
 # security team alongside DEC-GCP-03.
 resource "google_project_iam_custom_role" "wi_binder" {
+  # The IAM API must be on before a role can be read or created. Without this the
+  # provider races the enablement on a brand-new project and fails with
+  # SERVICE_DISABLED, which it reports as "must be undeleted" (seen 2026-09-28).
+  depends_on = [google_project_service.required]
+
   project     = var.gcp_project_id
   role_id     = "kubecoreWorkloadIdentityBinder"
   title       = "KubeCore Workload Identity Binder"

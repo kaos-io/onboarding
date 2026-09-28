@@ -429,7 +429,14 @@ apply_status="${PIPESTATUS[0]}"
 set -e
 
 if [ "$apply_status" -ne 0 ]; then
-  if grep -qiE 'deleted state|must be undeleted' "$apply_log"; then
+  # Order matters. The provider wraps a disabled-API 403 in the sentence
+  # "already exists and must be undeleted", so matching that phrase first sent
+  # people to undelete roles that were never there (seen 2026-09-28 on a brand
+  # new project). Check the API cause before the role-id causes.
+  if grep -qiE 'SERVICE_DISABLED|accessNotConfigured|has not been used in project' "$apply_log"; then
+    printf '\nOne of the Google APIs this module needs was still being enabled when Terraform\ntried to use it. The enablement has finished by now. Rerun this script and it will\ncarry on from where it stopped:\n\n'
+    printf '  %s --org %s --broker-client-id %s\n\n' "$0" "$ORG_NAME" "$BROKER_CLIENT_ID"
+  elif grep -qiE 'deleted state|must be undeleted' "$apply_log"; then
     printf '\nThis project held these roles before and GCP keeps deleted role ids reserved for\n'
     printf 'about 30 days. Undelete them, then rerun this script:\n\n'
     printf '  gcloud iam roles undelete kubecoreArtifactRegistryProvisioner --project=%s\n' "$PROJECT_ID"
