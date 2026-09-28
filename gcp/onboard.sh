@@ -38,17 +38,23 @@ Guided onboarding of a GCP project to the KAOS platform. Runs the Terraform
 module in this directory (gcp/) after checking the values it needs and the
 caller's permissions, then walks through plan, confirmation, and apply.
 
-All four required values come from the KAOS wizard's cloud step (the "Connect
-GCP" screen shows the exact command to paste, prefilled for your org).
+The required values come from the KAOS wizard's cloud step (the "Connect GCP"
+screen shows the exact command to paste, prefilled for your org). The project
+id and number are read from your gcloud session, so you do not retype them.
 
 Required:
   --org NAME                 KubeOrg name (<=19 chars, lowercase alnum/hyphen).
-  --project-id ID            GCP project ID (NOT the display name; see below).
-  --project-number NUMBER    GCP project number (numeric).
   --broker-client-id ID      Shared broker-app OIDC client id (the WIF
                               allowed audience).
 
 Options:
+  --project-id ID            GCP project ID (NOT the display name; see below).
+                              Defaults to the active project of your gcloud
+                              session, which the script prints before using.
+  --project-number NUMBER    GCP project number. Normally omitted: the script
+                              reads it from the project itself. When given, it
+                              is checked against the real one and a mismatch
+                              stops the run.
   --issuer URL                Zitadel OIDC issuer (default:
                                https://access.platform.kaos-labs.org).
   --yes                       Skip the apply confirmation prompt; also allow
@@ -136,8 +142,6 @@ done
 
 missing=""
 [ -n "$ORG_NAME" ] || missing="${missing}  --org NAME (from the KAOS wizard's cloud step)\n"
-[ -n "$PROJECT_ID" ] || missing="${missing}  --project-id ID (from the KAOS wizard's cloud step; see the project ID vs display name note in --help)\n"
-[ -n "$PROJECT_NUMBER" ] || missing="${missing}  --project-number NUMBER (from the KAOS wizard's cloud step)\n"
 [ -n "$BROKER_CLIENT_ID" ] || missing="${missing}  --broker-client-id ID (from the KAOS wizard's cloud step)\n"
 
 if [ -n "$missing" ]; then
@@ -181,6 +185,20 @@ if [ -n "${CLOUDSHELL:-}" ] || [ -n "${GOOGLE_CLOUD_SHELL:-}" ] || [ -d "/google
   is_cloud_shell="true"
 fi
 
+if [ -z "$PROJECT_ID" ]; then
+  check "active gcloud project"
+  PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+  case "$PROJECT_ID" in
+    ""|"(unset)")
+      fail "No --project-id was given and your gcloud session has no active project. Run: gcloud config set project YOUR_PROJECT_ID
+Then rerun, or pass --project-id YOUR_PROJECT_ID." ;;
+  esac
+  ok
+  # Print it on its own line: this is the only thing standing between someone
+  # with several projects and onboarding the wrong one.
+  printf 'Using project %s from your gcloud session (override with --project-id).\n' "$PROJECT_ID"
+fi
+
 check "project '$PROJECT_ID' resolves"
 project_describe="$(gcloud projects describe "$PROJECT_ID" --format='value(projectId,projectNumber,name)' 2>/dev/null || true)"
 if [ -z "$project_describe" ]; then
@@ -198,11 +216,16 @@ ok
 
 resolved_project_number="$(printf '%s' "$project_describe" | cut -f2)"
 
-check "project number matches --project-number"
-if [ "$resolved_project_number" != "$PROJECT_NUMBER" ]; then
-  fail "Project number mismatch: you passed --project-number ${PROJECT_NUMBER}, but project '${PROJECT_ID}' actually has number ${resolved_project_number}. Rerun with --project-number ${resolved_project_number}."
+if [ -n "$PROJECT_NUMBER" ]; then
+  check "project number matches --project-number"
+  if [ "$resolved_project_number" != "$PROJECT_NUMBER" ]; then
+    fail "Project number mismatch: you passed --project-number ${PROJECT_NUMBER}, but project '${PROJECT_ID}' has number ${resolved_project_number}. Drop the flag to use the real one, or correct it."
+  fi
+  ok
 fi
-ok
+# Everything downstream uses the number the project itself reports, so a typo
+# in a passed value can never reach the tfvars.
+PROJECT_NUMBER="$resolved_project_number"
 
 check "billing is enabled on the project"
 billing_output="$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)' 2>&1 || true)"
@@ -227,22 +250,48 @@ required_permissions=(
   serviceusage.services.enable
   secretmanager.secrets.create
 )
-permissions_csv="$(IFS=,; echo "${required_permissions[*]}")"
-if ! permissions_test_output="$(gcloud projects test-iam-permissions "$PROJECT_ID" --permissions="$permissions_csv" --format='value(permissions)' 2>&1)"; then
-  printf 'warning: could not run test-iam-permissions (%s); continuing without a permission check.\n' "$permissions_test_output"
+# gcloud has no projects test-iam-permissions subcommand, so this calls the
+# Cloud Resource Manager API directly. It answers for whatever role shape the
+# caller has (owner, a custom role, an inherited folder grant), which listing
+# role bindings cannot do. The API echoes back only the permissions the caller
+# holds, so anything absent from the reply is missing.
+access_token="$(gcloud auth print-access-token 2>/dev/null || true)"
+if ! command -v curl >/dev/null 2>&1; then
+  printf 'warning: curl not found, skipping the permission check; terraform will fail later if a grant is missing.\n'
+elif [ -z "$access_token" ]; then
+  printf 'warning: could not mint an access token, skipping the permission check.\n'
 else
-  missing_permissions=""
-  for perm in "${required_permissions[@]}"; do
-    case "$permissions_test_output" in
-      *"$perm"*) ;;
-      *) missing_permissions="${missing_permissions}  ${perm}\n" ;;
-    esac
-  done
-  if [ -n "$missing_permissions" ]; then
-    fail "$(printf 'Your account is missing these permissions on %s:\n%b\nAsk your GCP admin to grant an equivalent role (e.g. roles/owner or a custom role covering these) before rerunning.' "$PROJECT_ID" "$missing_permissions")"
-  fi
-  ok
+  permissions_json="$(printf '"%s",' "${required_permissions[@]}")"
+  permissions_json="{\"permissions\":[${permissions_json%,}]}"
+  # The token goes in through a config file on stdin, never on the command
+  # line, where any other user on the machine could read it from the process
+  # list.
+  permissions_response="$(printf 'header = "Authorization: Bearer %s"\n' "$access_token" |
+    curl -s --config - \
+      -X POST \
+      -H 'Content-Type: application/json' \
+      -d "$permissions_json" \
+      "https://cloudresourcemanager.googleapis.com/v1/projects/${PROJECT_ID}:testIamPermissions" 2>/dev/null || true)"
+  case "$permissions_response" in
+    *'"permissions"'*)
+      missing_permissions=""
+      for perm in "${required_permissions[@]}"; do
+        case "$permissions_response" in
+          *"\"$perm\""*) ;;
+          *) missing_permissions="${missing_permissions}  ${perm}\n" ;;
+        esac
+      done
+      if [ -n "$missing_permissions" ]; then
+        fail "$(printf 'Your account is missing these permissions on %s:\n%b\nAsk your GCP admin for roles/owner, or a role that covers them, then rerun.' "$PROJECT_ID" "$missing_permissions")"
+      fi
+      ok
+      ;;
+    *)
+      printf 'warning: the permission check did not return a usable answer, continuing without it.\n'
+      ;;
+  esac
 fi
+unset access_token
 
 check "terraform on PATH, version >= ${TERRAFORM_MIN_VERSION}"
 terraform_ok="false"
@@ -355,8 +404,8 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$ASSUME_YES" != "true" ]; then
   printf '\nThis will create the KAOS identity plane (a Workload Identity Federation pool and six\n'
-  printf 'service accounts) inside your project %s. It creates no GitHub App key and stores no\n' "$PROJECT_ID"
-  printf 'secret in terraform.tfvars.\n\n'
+  printf 'service accounts) inside your project %s (number %s). It creates no GitHub App key\n' "$PROJECT_ID" "$PROJECT_NUMBER"
+  printf 'and stores no secret in terraform.tfvars.\n\n'
   printf 'Type "apply" to proceed: '
   read -r confirmation || confirmation=""
   if [ "$confirmation" != "apply" ]; then

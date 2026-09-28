@@ -6,7 +6,7 @@ Run once per KubeOrg, in your GCP project, by an IAM-admin, before creating the 
 - A GCP project with a **linked billing account**.
 - Run by a principal with `serviceusage.services.enable` plus the onboarding admin roles
   (or `roles/owner` for the onboarding run).
-- The module enables every API the platform needs for you — both the **identity/federation**
+- The module enables every API the platform needs for you ,  both the **identity/federation**
   APIs it uses directly and the **provisioning** APIs the operator/Crossplane use afterward to
   build the KubeOrg network and KubePool cluster (so a fresh project works end-to-end). If your
   org pre-provisions APIs via policy or pipeline, enable them yourself first:
@@ -28,18 +28,20 @@ runs init/plan/apply with a confirmation step:
 git clone https://github.com/kaos-io/onboarding
 cd onboarding/gcp
 
-./onboard.sh --org acme --project-id acme-prod-509613 --project-number 123456789012 \
-  --broker-client-id 376257051585676814
+# Uses the active project of your gcloud session and reads its number itself.
+./onboard.sh --org acme --broker-client-id 376257051585676814
 ```
 
-All four values come from the KAOS wizard's cloud step — copy the command it shows you
-verbatim. Run `./onboard.sh --help` for the full flag list, including `--plan-only` and
-`--yes`. A few things this script exists to catch:
+It prints the project it picked before it uses it. Pass `--project-id` when your session
+points somewhere else, and `--project-number` only if you want it asserted rather than
+read. Both values come from the KAOS wizard's cloud step, which shows the command with
+them already filled in. Run `./onboard.sh --help` for the full flag list, including
+`--plan-only` and `--yes`. A few things this script exists to catch:
 
 - **Project ID vs display name.** GCP projects have an immutable, globally unique ID and a
   separate, editable display name; Terraform needs the ID. GCP only appends digits to the ID
   when your chosen name is already taken globally, so the two are sometimes identical and
-  sometimes not — a project displayed as "integration-test" can have the ID
+  sometimes not. A project displayed as "integration-test" can have the ID
   `integration-test-509613`. Passing the display name where the ID is expected fails every
   resource with `Project 'projects/integration-test' not found or deleted`; the script
   detects this case and tells you the correct `--project-id` to use.
@@ -93,7 +95,7 @@ Verified against scratch project `wwwe-500812` on 2026-06-28 with `hashicorp/goo
 - Owned-app path verified on a billing-enabled project: `terraform apply` with a throwaway
   `github_app_id`/`github_app_private_key` wrote the secret to GCP Secret Manager (secret
   `acme-github-provider-credentials`, version `1` ENABLED), while `grep -c "PRIVATE KEY"
-  terraform.tfstate` was `0` — `secret_data_wo` is write-only, so the key reached GSM but is
+  terraform.tfstate` was `0` ,  `secret_data_wo` is write-only, so the key reached GSM but is
   absent from Terraform state. Destroyed clean afterward.
 
 Re-verified on two further scratch projects, 2026-09-22 and 2026-09-24, at module commit
@@ -103,7 +105,7 @@ run above). Treat 51 as the current expected plan size on a fresh project; the r
 count will keep moving as the module gains scope, so check the plan output itself rather
 than assuming either number.
 
-## Cost export (disabled by default — future work)
+## Cost export (disabled by default ,  future work)
 
 > **Status: FUTURE WORK, disabled by default (`enable_cost_export = false`).**
 > The billing-account metrics-consumption path is not built yet, so the footprint below is
@@ -123,7 +125,7 @@ footprint the KAOS cost dashboard needs to read invoice-accurate cost actuals fo
 
 **Why it can't be fully automated (the blocker that makes this future work):** even with the
 dataset in place, the Cloud Billing -> BigQuery export that populates it is a **Console-only**
-billing-admin step — GCP exposes no API, `gcloud`, or Terraform resource for the export
+billing-admin step ,  GCP exposes no API, `gcloud`, or Terraform resource for the export
 config. So the dataset stays empty until a human wires it, and the dashboard shows no actuals.
 Consuming billing metrics end-to-end (e.g. reading directly from the billing account) is the
 outstanding design work tracked here.
@@ -136,7 +138,7 @@ other datasets.
 
 Optional, disabled by default. When enabled, onboarding stages the signed private key that
 binds this deployment to a Meluxina HPC account in GCP Secret Manager under the
-**deterministic, org-independent** id `meluxina-ssh-key` (identical for every org — it is a
+**deterministic, org-independent** id `meluxina-ssh-key` (identical for every org ,  it is a
 single shared institutional credential, not per-org). ESO reads it via the org eso-sa's
 existing project-level Secret Manager access (no extra IAM).
 
