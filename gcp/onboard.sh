@@ -474,4 +474,19 @@ printf '  gke:        %s\n' "$gke_sa_email"
 printf '  ci:         %s\n\n' "$ci_sa_email"
 printf 'Terraform state: %s\n' "$state_path"
 printf 'Keep this file. It is what removes this setup later.\n\n'
-printf 'Next: return to the KAOS wizard and run the verification probe.\n'
+printf 'Next: return to the KAOS wizard and run the verification probe.\n\n'
+
+# ---------------------------------------------------------------------------
+# Hand-back line for the wizard
+# ---------------------------------------------------------------------------
+# The wizard used to ask the operator to retype the project id and number,
+# and a value copied from the GCP console can be the project's display name
+# rather than its id (see the ID vs display name note in usage() above),
+# which fails the whole apply downstream. Printing them back from the
+# variables this script already resolved, instead of the flags as typed,
+# means the wizard gets values that are guaranteed to match this project.
+# This also runs on a rerun where terraform found nothing to change: apply
+# still succeeds in that case, and whoever already onboarded still needs a
+# way to get this line for the wizard.
+printf 'Paste this line into the KAOS wizard to continue:\n\n'
+printf '  kaos:gcp:%s:%s:%s\n' "$ORG_NAME" "$PROJECT_ID" "$PROJECT_NUMBER"
