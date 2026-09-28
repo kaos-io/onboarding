@@ -54,6 +54,11 @@ them already filled in. Run `./onboard.sh --help` for the full flag list, includ
   org-independent ids and so already exist. The script recognises this failure and prints the
   exact `terraform import` commands to adopt the existing roles before you rerun apply.
 
+After a successful apply (including a rerun where terraform finds nothing to change), the
+script's last line of output is `kaos:gcp:<org>:<project-id>:<project-number>`; paste that
+line into the KAOS wizard and it fills in the project id and number for you. It is not
+printed by `--plan-only`, since nothing was applied.
+
 ### Manual path (pipeline / advanced)
 
 For CI pipelines or anyone who wants to run terraform directly instead of through the script:
