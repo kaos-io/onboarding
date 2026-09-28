@@ -19,6 +19,43 @@ Run once per KubeOrg, in your GCP project, by an IAM-admin, before creating the 
   ```
 
 ## Run
+
+The guided script is the primary path. It checks your gcloud auth, resolves and validates
+the project, checks your IAM permissions, installs terraform on Cloud Shell if needed, then
+runs init/plan/apply with a confirmation step:
+
+```bash
+git clone https://github.com/kaos-io/onboarding
+cd onboarding/gcp
+
+./onboard.sh --org acme --project-id acme-prod-509613 --project-number 123456789012 \
+  --broker-client-id 376257051585676814
+```
+
+All four values come from the KAOS wizard's cloud step — copy the command it shows you
+verbatim. Run `./onboard.sh --help` for the full flag list, including `--plan-only` and
+`--yes`. A few things this script exists to catch:
+
+- **Project ID vs display name.** GCP projects have an immutable, globally unique ID and a
+  separate, editable display name; Terraform needs the ID. GCP only appends digits to the ID
+  when your chosen name is already taken globally, so the two are sometimes identical and
+  sometimes not — a project displayed as "integration-test" can have the ID
+  `integration-test-509613`. Passing the display name where the ID is expected fails every
+  resource with `Project 'projects/integration-test' not found or deleted`; the script
+  detects this case and tells you the correct `--project-id` to use.
+- **Google Cloud Shell does not preinstall terraform**, and anything installed with `apt`
+  there does not survive past the current session (only `$HOME` does). The script detects
+  Cloud Shell and offers to install a pinned terraform into `$HOME/bin`, which does persist.
+- **A project that already hosts another KAOS organisation** fails apply on the four
+  project-level custom roles (`kubecoreArtifactRegistryProvisioner`, `kubecoreEsoSecretWriter`,
+  `kubecoreSecretManagerProvisioner`, `kubecoreWorkloadIdentityBinder`), which have fixed,
+  org-independent ids and so already exist. The script recognises this failure and prints the
+  exact `terraform import` commands to adopt the existing roles before you rerun apply.
+
+### Manual path (pipeline / advanced)
+
+For CI pipelines or anyone who wants to run terraform directly instead of through the script:
+
 ```bash
 git clone https://github.com/kaos-io/onboarding
 cd onboarding/gcp
@@ -58,6 +95,13 @@ Verified against scratch project `wwwe-500812` on 2026-06-28 with `hashicorp/goo
   `acme-github-provider-credentials`, version `1` ENABLED), while `grep -c "PRIVATE KEY"
   terraform.tfstate` was `0` — `secret_data_wo` is write-only, so the key reached GSM but is
   absent from Terraform state. Destroyed clean afterward.
+
+Re-verified on two further scratch projects, 2026-09-22 and 2026-09-24, at module commit
+`39aa98b` with `hashicorp/google` 6.50.0: on a fresh project with Owner, `terraform plan`
+plans **51 to add, 0 to change, 0 to destroy** (the module has grown since the 2026-06-28
+run above). Treat 51 as the current expected plan size on a fresh project; the resource
+count will keep moving as the module gains scope, so check the plan output itself rather
+than assuming either number.
 
 ## Cost export (disabled by default — future work)
 
