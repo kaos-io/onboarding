@@ -84,6 +84,11 @@ private key was passed at apply time; leave them empty on a new onboarding run.
 Creates a per-org WIF pool/provider `<org>-kaosid` and the `<org>-crossplane / -gcp-eso-sa /
 -gcp-dns-sa / -node` service accounts with narrowed roles. Re-running is a no-op (idempotent).
 
+Re-run it after upgrading the module: newer revisions can widen a KAOS custom role (for
+example, `kubecoreEsoSecretWriter` gained `secretmanager.secrets.update` so External Secrets
+can label the secrets KAOS writes). The re-run needs `iam.roles.update`, which `onboard.sh`
+checks for.
+
 ## Parity
 `terraform output zitadel_sub` MUST equal the operator's `DeterministicUserID(org_name)`, and
 `terraform output wif_pool_id` MUST equal the operator/broker `WIFPoolName(org_name)`.

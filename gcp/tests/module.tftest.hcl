@@ -38,3 +38,22 @@ run "golden_vectors_unchanged" {
     error_message = "wif_pool_id parity with WIFPoolName(\"acme\") broke."
   }
 }
+
+run "eso_writer_can_label_but_not_delete" {
+  command = plan
+
+  assert {
+    condition     = contains(google_project_iam_custom_role.eso_secret_writer.permissions, "secretmanager.secrets.update")
+    error_message = "kubecoreEsoSecretWriter needs secretmanager.secrets.update: ESO PushSecret calls UpdateSecret to write the C1 kaos-* labels."
+  }
+
+  assert {
+    condition = length(setintersection(google_project_iam_custom_role.eso_secret_writer.permissions, [
+      "secretmanager.secrets.delete",
+      "secretmanager.secrets.list",
+      "secretmanager.secrets.setIamPolicy",
+      "secretmanager.versions.destroy",
+    ])) == 0
+    error_message = "kubecoreEsoSecretWriter must stay least-privilege: no delete, list, setIamPolicy or version destroy."
+  }
+}

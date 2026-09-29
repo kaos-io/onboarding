@@ -246,6 +246,7 @@ required_permissions=(
   resourcemanager.projects.setIamPolicy
   iam.serviceAccounts.create
   iam.roles.create
+  iam.roles.update
   iam.workloadIdentityPools.create
   serviceusage.services.enable
   secretmanager.secrets.create

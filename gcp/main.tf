@@ -198,7 +198,10 @@ resource "google_service_account" "eso" {
   depends_on   = [google_project_service.required]
 }
 
-# Secret Manager: ESO PushSecret needs create/get + version add/access, NOT delete → custom role.
+# Secret Manager: ESO PushSecret needs create/get, update (labels), version add/access,
+# NOT delete → custom role. secrets.update is required because ESO's gcpsm PushSecret
+# writes PushSecret-metadata labels with UpdateSecret after creating the secret (the
+# kaos-* labels on every user-managed secret, kaos PRD 695).
 # roles/secretmanager.secretCreator does not exist in GCP (returns 400 in live e2e); covered by .secrets.create below.
 resource "google_project_iam_custom_role" "eso_secret_writer" {
   # The IAM API must be on before a role can be read or created. Without this the
@@ -209,10 +212,11 @@ resource "google_project_iam_custom_role" "eso_secret_writer" {
   project     = var.gcp_project_id
   role_id     = "kubecoreEsoSecretWriter"
   title       = "KubeCore ESO Secret Writer"
-  description = "ESO PushSecret: create/get secrets + add/access versions; no delete (least-privilege)."
+  description = "ESO PushSecret: create/get/update-labels secrets + add/access versions; no delete (least-privilege)."
   permissions = [
     "secretmanager.secrets.create",
     "secretmanager.secrets.get",
+    "secretmanager.secrets.update",
     "secretmanager.versions.add",
     "secretmanager.versions.access",
   ]
