@@ -32,7 +32,9 @@ cd onboarding/gcp
 ./onboard.sh --org acme --broker-client-id 376257051585676814
 ```
 
-It prints the project it picked before it uses it. Pass `--project-id` when your session
+Before it changes anything it shows the project id, its display name and its number
+in a banner and asks you to type the project id back. Nothing is created until you do,
+so a session left pointed at the wrong project cannot quietly onboard it. Pass `--project-id` when your session
 points somewhere else, and `--project-number` only if you want it asserted rather than
 read. Both values come from the KAOS wizard's cloud step, which shows the command with
 them already filled in. Run `./onboard.sh --help` for the full flag list, including
