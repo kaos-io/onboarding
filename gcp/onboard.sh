@@ -215,6 +215,7 @@ fi
 ok
 
 resolved_project_number="$(printf '%s' "$project_describe" | cut -f2)"
+resolved_project_name="$(printf '%s' "$project_describe" | cut -f3)"
 
 if [ -n "$PROJECT_NUMBER" ]; then
   check "project number matches --project-number"
@@ -415,14 +416,31 @@ fi
 # ---------------------------------------------------------------------------
 # Confirmation
 # ---------------------------------------------------------------------------
+# The gate is deliberately about the PROJECT, not about the word "apply". Someone
+# with several projects open, or a gcloud session left pointed somewhere else, is
+# the likeliest way this ends up in the wrong place, and IAM changes in the wrong
+# project are awkward to unpick. Typing the project id cannot be done without
+# reading it, which a "y/N" or a fixed word can.
+printf '\n'
+printf '  ============================================================\n'
+printf '   ABOUT TO CHANGE THIS GCP PROJECT\n'
+printf '  ============================================================\n'
+printf '   project id      %s\n' "$PROJECT_ID"
+printf '   display name    %s\n' "${resolved_project_name:-(none)}"
+printf '   project number  %s\n' "$PROJECT_NUMBER"
+printf '   organisation    %s\n' "$ORG_NAME"
+printf '  ============================================================\n\n'
+printf 'It creates a Workload Identity Federation pool, six service accounts and their\n'
+printf 'IAM grants. It creates no GitHub App key and stores no secret in terraform.tfvars.\n'
+printf 'Nothing here is billable on its own.\n\n'
+
 if [ "$ASSUME_YES" != "true" ]; then
-  printf '\nThis will create the KAOS identity plane (a Workload Identity Federation pool and six\n'
-  printf 'service accounts) inside your project %s (number %s). It creates no GitHub App key\n' "$PROJECT_ID" "$PROJECT_NUMBER"
-  printf 'and stores no secret in terraform.tfvars.\n\n'
-  printf 'Type "apply" to proceed: '
+  printf 'If this is not the project you meant, press Ctrl-C and rerun with\n'
+  printf '  --project-id YOUR_PROJECT_ID\n\n'
+  printf 'Type the project id (%s) to proceed: ' "$PROJECT_ID"
   read -r confirmation || confirmation=""
-  if [ "$confirmation" != "apply" ]; then
-    printf 'nothing was created\n'
+  if [ "$confirmation" != "$PROJECT_ID" ]; then
+    printf '\nThat did not match "%s", so nothing was created.\n' "$PROJECT_ID"
     exit 1
   fi
 fi
