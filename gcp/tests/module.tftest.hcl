@@ -57,3 +57,16 @@ run "eso_writer_can_label_but_not_delete" {
     error_message = "kubecoreEsoSecretWriter must stay least-privilege: no delete, list, setIamPolicy or version destroy."
   }
 }
+
+# Pending owner approval (kaos PRD 695). ESO's gcpsm provider checks existence for
+# `updatePolicy: IfNotExists` by listing versions, not by getting the secret (live
+# probe on 2026-09-28: PushSecret failed with "Permission 'secretmanager.versions.list'
+# denied"). Used by the operator's override-slot placeholders.
+run "eso_writer_can_list_versions_for_ifnotexists" {
+  command = plan
+
+  assert {
+    condition     = contains(google_project_iam_custom_role.eso_secret_writer.permissions, "secretmanager.versions.list")
+    error_message = "kubecoreEsoSecretWriter needs secretmanager.versions.list: ESO's gcpsm PushSecret checks existence for updatePolicy: IfNotExists by listing versions."
+  }
+}

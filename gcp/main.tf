@@ -212,13 +212,18 @@ resource "google_project_iam_custom_role" "eso_secret_writer" {
   project     = var.gcp_project_id
   role_id     = "kubecoreEsoSecretWriter"
   title       = "KubeCore ESO Secret Writer"
-  description = "ESO PushSecret: create/get/update-labels secrets + add/access versions; no delete (least-privilege)."
+  description = "ESO PushSecret: create/get/update-labels secrets + add/access/list versions; no delete (least-privilege)."
   permissions = [
     "secretmanager.secrets.create",
     "secretmanager.secrets.get",
     "secretmanager.secrets.update",
     "secretmanager.versions.add",
     "secretmanager.versions.access",
+    # ESO's gcpsm provider checks existence for `updatePolicy: IfNotExists` by
+    # listing versions, not by getting the secret (live probe on 2026-09-28:
+    # PushSecret failed with "Permission 'secretmanager.versions.list' denied").
+    # Used by the operator's override-slot placeholders.
+    "secretmanager.versions.list",
   ]
 }
 
