@@ -341,7 +341,20 @@ else
     if ! command -v terraform >/dev/null 2>&1; then
       die "terraform install into ${install_dir} did not put it on PATH. Add ${install_dir} to PATH yourself and rerun."
     fi
-    printf 'Installed terraform %s into %s (persists under the home directory between Cloud Shell sessions; add %s to PATH in future sessions).\n' "$PINNED_TERRAFORM_VERSION" "$install_dir" "$install_dir"
+    # The binary survives in $HOME but PATH does not, so a later session would
+    # download it again (seen on the owner's second run). Put the line in the
+    # profile once, idempotently, instead of telling the person to do it.
+    # Single quotes on purpose: $HOME and $PATH must reach the profile
+    # unexpanded so they resolve when a future shell reads it.
+    # shellcheck disable=SC2016
+    profile_line='export PATH="$HOME/bin:$PATH"'
+    for profile in "${HOME}/.profile" "${HOME}/.bashrc"; do
+      if [ -f "$profile" ] && ! grep -qF "$profile_line" "$profile" 2>/dev/null; then
+        printf '\n# Added by the KAOS onboarding script so terraform stays on PATH.\n%s\n' "$profile_line" >> "$profile"
+        printf 'Added %s to PATH in %s.\n' "$install_dir" "$profile"
+      fi
+    done
+    printf 'Installed terraform %s into %s. It persists between Cloud Shell sessions.\n' "$PINNED_TERRAFORM_VERSION" "$install_dir"
   else
     printf 'terraform >= %s was not found on PATH. Install it: https://developer.hashicorp.com/terraform/install\n' "$TERRAFORM_MIN_VERSION" >&2
     exit 1

@@ -33,8 +33,7 @@ locals {
     "roles/storage.admin",
   ]
 
-  # Project APIs enabled for the KAOS control plane. Always enabled; Secret Manager is
-  # added only on the owned-app path (see google_project_service.secretmanager).
+  # Project APIs enabled for the KAOS control plane, all unconditional.
   #   - identity/federation: used by THIS module to create the WIF identity plane.
   #   - provisioning: used LATER by the operator's Crossplane providers to build the KubeOrg
   #     network (compute, dns) and the KubePool GKE cluster (container, servicenetworking).
@@ -54,6 +53,13 @@ locals {
     "servicenetworking.googleapis.com",
     # PRD-247 GCP ML pricing exporter: Cloud Billing price-catalog API (SKU pricing).
     "cloudbilling.googleapis.com",
+    # Secret Manager holds the GitHub App credential. On the owner-link flow this
+    # module stages nothing, so nothing here consumes the API, but the platform's
+    # token-broker writes the credential into this project right after the
+    # verification probe. Enabling it only when the module itself stages a secret
+    # left a brand-new project without it and the push failed with HTTP 403,
+    # parking the onboarding at ORG_COMMITTING (seen 2026-09-28).
+    "secretmanager.googleapis.com",
     # PRD-REG-994 Phase 2: per-KubeProject Artifact Registry repositories.
     "artifactregistry.googleapis.com",
   ]
@@ -64,15 +70,6 @@ resource "google_project_service" "required" {
   project            = var.gcp_project_id
   service            = each.value
   disable_on_destroy = false # never disable APIs on destroy — the operator/Crossplane rely on them; re-enabling has propagation lag
-}
-
-resource "google_project_service" "secretmanager" {
-  # Enabled whenever ANY GSM secret is staged: the dedicated GitHub App credential
-  # and/or the Meluxina HPC SSH key.
-  count              = (local.stage_github_app || var.enable_meluxina_ssh_key) ? 1 : 0
-  project            = var.gcp_project_id
-  service            = "secretmanager.googleapis.com"
-  disable_on_destroy = false
 }
 
 resource "google_iam_workload_identity_pool" "kubecore_zitadel" {
@@ -529,7 +526,7 @@ resource "google_secret_manager_secret" "github_app" {
   count      = local.stage_github_app ? 1 : 0
   project    = var.gcp_project_id
   secret_id  = "${var.org_name}-github-provider-credentials"
-  depends_on = [google_project_service.secretmanager]
+  depends_on = [google_project_service.required]
   replication {
     auto {}
   }
@@ -557,7 +554,7 @@ resource "google_secret_manager_secret" "meluxina_ssh_key" {
   count      = var.enable_meluxina_ssh_key ? 1 : 0
   project    = var.gcp_project_id
   secret_id  = "meluxina-ssh-key"
-  depends_on = [google_project_service.secretmanager]
+  depends_on = [google_project_service.required]
   replication {
     auto {}
   }
