@@ -1,3 +1,7 @@
+> **Superseded (2026-09-28, kaos PRD 695).** The module no longer seeds this secret; the
+> key is a console-managed project secret. See `gcp/README.md`, "Meluxina HPC SSH key
+> (removed)". Kept for history.
+
 # Meluxina HPC SSH key secret — design
 
 **Date:** 2026-07-01

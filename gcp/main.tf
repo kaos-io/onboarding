@@ -545,32 +545,44 @@ resource "google_secret_manager_secret_version" "github_app" {
   secret_data_wo_version = 2
 }
 
-# --- Meluxina HPC SSH key (opt-in, org-independent) ---
-# Deterministic id 'meluxina-ssh-key' — IDENTICAL across all orgs (not org-prefixed):
-# a single shared Meluxina institutional credential. Opt-in via enable_meluxina_ssh_key.
-# The org eso-sa already holds project-level secretmanager.secrets.get + versions.access
-# (kubecoreEsoSecretWriter), so no extra IAM is needed for ESO to read it.
-resource "google_secret_manager_secret" "meluxina_ssh_key" {
-  count      = var.enable_meluxina_ssh_key ? 1 : 0
-  project    = var.gcp_project_id
-  secret_id  = "meluxina-ssh-key"
-  depends_on = [google_project_service.required]
-  replication {
-    auto {}
+# --- Meluxina HPC SSH key: no longer seeded here (kaos PRD 695) ---
+# The key is now a KAOS project secret, entered in the console. These blocks make
+# Terraform FORGET the old 'meluxina-ssh-key' secret without deleting it, because
+# running HPC projects keep reading it until they are migrated. Delete the secret
+# yourself (gcloud secrets delete meluxina-ssh-key) only after every HPC project in
+# this GCP project has moved to its console-managed key. Keep these blocks: a
+# client who applies this module later still needs them.
+removed {
+  from = google_secret_manager_secret_version.meluxina_ssh_key
+
+  lifecycle {
+    destroy = false
   }
 }
 
-resource "google_secret_manager_secret_version" "meluxina_ssh_key" {
-  count  = var.enable_meluxina_ssh_key ? 1 : 0
-  secret = google_secret_manager_secret.meluxina_ssh_key[0].id
-  # Write-only: the raw key bytes are sent to GCP but never persisted in Terraform state.
-  secret_data_wo         = file(var.meluxina_ssh_key_path)
-  secret_data_wo_version = 1
+removed {
+  from = google_secret_manager_secret.meluxina_ssh_key
 
   lifecycle {
-    precondition {
-      condition     = trimspace(var.meluxina_ssh_key_path) != ""
-      error_message = "meluxina_ssh_key_path must be set (path to the signed private key file) when enable_meluxina_ssh_key is true."
-    }
+    destroy = false
+  }
+}
+
+# The count-gated google_project_service.secretmanager[0] was dropped from this
+# configuration by a prior commit (a407c24) with no moved/removed block, so any state
+# that already applied that commit still tracks it — planning a DESTROY (harmless,
+# disable_on_destroy = false leaves the API on, but it fails Task 3's zero-destroy gate
+# and would alarm a client). This is `removed`, not `moved`: a client on a407c24 already
+# has BOTH addresses in state — the old secretmanager[0] AND the new
+# required["secretmanager.googleapis.com"] (created independently by that fix, not by
+# renaming this one). `moved` adopts a resource under a target address; it refuses when
+# that address is already tracked by an unrelated resource. `removed` with
+# destroy = false just makes Terraform forget the old address; the API stays enabled
+# under required.
+removed {
+  from = google_project_service.secretmanager
+
+  lifecycle {
+    destroy = false
   }
 }

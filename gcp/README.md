@@ -139,22 +139,21 @@ The grants are read-only and dataset-scoped for data; the only project-scoped gr
 `jobUser` (job creation, no data access on its own). Nothing touches the billing account or
 other datasets.
 
-## Meluxina HPC SSH key
+## Meluxina HPC SSH key (removed)
 
-Optional, disabled by default. When enabled, onboarding stages the signed private key that
-binds this deployment to a Meluxina HPC account in GCP Secret Manager under the
-**deterministic, org-independent** id `meluxina-ssh-key` (identical for every org ,  it is a
-single shared institutional credential, not per-org). ESO reads it via the org eso-sa's
-existing project-level Secret Manager access (no extra IAM).
+This module no longer stages the Meluxina HPC SSH key. Enter the key in the KAOS console
+as a project secret of type SSH key and select it on the project's HPC settings. The value
+goes straight to your Secret Manager and never passes through Terraform.
 
-```bash
-terraform apply -var-file=terraform.tfvars \
-  -var="enable_meluxina_ssh_key=true" \
-  -var="meluxina_ssh_key_path=/absolute/path/to/meluxina_private_key"
-```
+**Upgrading from a revision that had `enable_meluxina_ssh_key`:**
 
-The key's raw bytes are pushed via write-only `secret_data_wo`, so they reach GSM but are
-never persisted in Terraform state. `terraform output meluxina_ssh_key_secret_id` returns
-`meluxina-ssh-key` when enabled, empty otherwise. Enabling this also enables the Secret
-Manager API if it is not already on. Set `enable_meluxina_ssh_key = false` (the default) to
-stage nothing.
+- Remove `enable_meluxina_ssh_key` and `meluxina_ssh_key_path` from your `terraform.tfvars`
+  and from any `-var` flags. Terraform rejects an undeclared `-var` on the command line; a
+  leftover entry left in `terraform.tfvars` instead is only a warning and is silently ignored.
+- The next `terraform apply` reports the `meluxina-ssh-key` secret as "will no longer be
+  managed by Terraform" and destroys nothing. The secret stays in your Secret Manager so
+  HPC projects that still read it keep working.
+- Once every HPC project has moved to its console-managed key, delete the old secret
+  yourself: `gcloud secrets delete meluxina-ssh-key --project <PROJECT>`. KAOS never deletes
+  it: the External Secrets service account that writes project secrets has no delete
+  permission, and KAOS only manages ids starting with `kaos_`.
