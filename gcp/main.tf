@@ -190,6 +190,32 @@ resource "google_project_iam_member" "crossplane_artifact_registry" {
   member  = "serviceAccount:${google_service_account.crossplane.email}"
 }
 
+# The crossplane (provisioning) SA reaps the Retain-policy persistent disks a deleted
+# KubePool leaves behind (the operator's pool-deletion disk reaper authenticates as THIS
+# SA). Disk read + delete only: no create, no attach, no setIamPolicy, no snapshot
+# power. The predefined compute.networkAdmin / securityAdmin roles above grant no disk
+# deletion, hence this narrow custom role.
+resource "google_project_iam_custom_role" "crossplane_disk_reaper" {
+  # Same IAM-API enablement race as the roles above.
+  depends_on = [google_project_service.required]
+
+  project     = var.gcp_project_id
+  role_id     = "kubecoreDiskReaper"
+  title       = "KubeCore Disk Reaper"
+  description = "Crossplane SA: get/list/delete persistent disks left by a deleted KubePool (Retain reclaim policy); no create/attach/setIamPolicy."
+  permissions = [
+    "compute.disks.get",
+    "compute.disks.list",
+    "compute.disks.delete",
+  ]
+}
+
+resource "google_project_iam_member" "crossplane_disk_reaper" {
+  project = var.gcp_project_id
+  role    = google_project_iam_custom_role.crossplane_disk_reaper.name
+  member  = "serviceAccount:${google_service_account.crossplane.email}"
+}
+
 # --- ESO SA (org-shared) ---
 resource "google_service_account" "eso" {
   project      = var.gcp_project_id

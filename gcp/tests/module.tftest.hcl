@@ -70,3 +70,38 @@ run "eso_writer_can_list_versions_for_ifnotexists" {
     error_message = "kubecoreEsoSecretWriter needs secretmanager.versions.list: ESO's gcpsm PushSecret checks existence for updatePolicy: IfNotExists by listing versions."
   }
 }
+
+# The operator's KubePool deletion reaper deletes Retain-policy persistent disks as the
+# crossplane SA. Exactly disk get/list/delete; nothing that creates, attaches or
+# re-permissions a disk.
+run "crossplane_disk_reaper_is_disk_delete_only" {
+  command = plan
+
+  override_resource {
+    target          = google_service_account.crossplane
+    override_during = plan
+    values = {
+      email = "acme-crossplane@acme-prod.iam.gserviceaccount.com"
+      name  = "projects/acme-prod/serviceAccounts/acme-crossplane@acme-prod.iam.gserviceaccount.com"
+    }
+  }
+
+  assert {
+    condition = toset(google_project_iam_custom_role.crossplane_disk_reaper.permissions) == toset([
+      "compute.disks.get",
+      "compute.disks.list",
+      "compute.disks.delete",
+    ])
+    error_message = "kubecoreDiskReaper must hold exactly compute.disks.get/list/delete."
+  }
+
+  assert {
+    condition     = google_project_iam_custom_role.crossplane_disk_reaper.role_id == "kubecoreDiskReaper"
+    error_message = "kubecoreDiskReaper role id changed."
+  }
+
+  assert {
+    condition     = google_project_iam_member.crossplane_disk_reaper.member == "serviceAccount:acme-crossplane@acme-prod.iam.gserviceaccount.com"
+    error_message = "kubecoreDiskReaper must be bound to the org's crossplane SA."
+  }
+}

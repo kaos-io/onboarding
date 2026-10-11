@@ -50,8 +50,8 @@ them already filled in. Run `./onboard.sh --help` for the full flag list, includ
 - **Google Cloud Shell does not preinstall terraform**, and anything installed with `apt`
   there does not survive past the current session (only `$HOME` does). The script detects
   Cloud Shell and offers to install a pinned terraform into `$HOME/bin`, which does persist.
-- **A project that already hosts another KAOS organisation** fails apply on the four
-  project-level custom roles (`kubecoreArtifactRegistryProvisioner`, `kubecoreEsoSecretWriter`,
+- **A project that already hosts another KAOS organisation** fails apply on the five
+  project-level custom roles (`kubecoreArtifactRegistryProvisioner`, `kubecoreDiskReaper`, `kubecoreEsoSecretWriter`,
   `kubecoreSecretManagerProvisioner`, `kubecoreWorkloadIdentityBinder`), which have fixed,
   org-independent ids and so already exist. The script recognises this failure and prints the
   exact `terraform import` commands to adopt the existing roles before you rerun apply.

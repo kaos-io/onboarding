@@ -472,15 +472,17 @@ if [ "$apply_status" -ne 0 ]; then
     printf '\nThis project held these roles before and GCP keeps deleted role ids reserved for\n'
     printf 'about 30 days. Undelete them, then rerun this script:\n\n'
     printf '  gcloud iam roles undelete kubecoreArtifactRegistryProvisioner --project=%s\n' "$PROJECT_ID"
+    printf '  gcloud iam roles undelete kubecoreDiskReaper --project=%s\n' "$PROJECT_ID"
     printf '  gcloud iam roles undelete kubecoreEsoSecretWriter --project=%s\n' "$PROJECT_ID"
     printf '  gcloud iam roles undelete kubecoreSecretManagerProvisioner --project=%s\n' "$PROJECT_ID"
     printf '  gcloud iam roles undelete kubecoreWorkloadIdentityBinder --project=%s\n\n' "$PROJECT_ID"
   elif grep -q 'kubecore' "$apply_log"; then
-    printf '\nIt looks like this project already hosts another KAOS organisation: the four\n'
+    printf '\nIt looks like this project already hosts another KAOS organisation: the five\n'
     printf 'project-level custom roles below have fixed, org-independent ids, so Terraform\n'
     printf 'cannot create them again. Import the existing roles into this state, then rerun\n'
     printf 'terraform apply -var-file=%s:\n\n' "$TFVARS_FILE"
     printf '  terraform import google_project_iam_custom_role.crossplane_artifact_registry projects/%s/roles/kubecoreArtifactRegistryProvisioner\n' "$PROJECT_ID"
+    printf '  terraform import google_project_iam_custom_role.crossplane_disk_reaper projects/%s/roles/kubecoreDiskReaper\n' "$PROJECT_ID"
     printf '  terraform import google_project_iam_custom_role.eso_secret_writer projects/%s/roles/kubecoreEsoSecretWriter\n' "$PROJECT_ID"
     printf '  terraform import google_project_iam_custom_role.crossplane_secret_manager projects/%s/roles/kubecoreSecretManagerProvisioner\n' "$PROJECT_ID"
     printf '  terraform import google_project_iam_custom_role.wi_binder projects/%s/roles/kubecoreWorkloadIdentityBinder\n\n' "$PROJECT_ID"
