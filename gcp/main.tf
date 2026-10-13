@@ -86,6 +86,8 @@ resource "google_iam_workload_identity_pool_provider" "kubecore_zitadel" {
   workload_identity_pool_provider_id = local.wif_provider_id
   display_name                       = "KubeCore Zitadel"
   attribute_mapping                  = { "google.subject" = "assertion.sub" }
+  # null (the default) leaves the provider unconditioned, as before.
+  attribute_condition = var.attribute_condition
   oidc {
     issuer_uri        = var.zitadel_issuer
     allowed_audiences = [var.broker_app_client_id]

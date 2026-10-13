@@ -28,6 +28,16 @@ variable "broker_app_client_id" {
   description = "Shared broker-app clientId = the WIF allowed-audience (from setup-zitadel-broker-identity.sh)."
 }
 
+variable "attribute_condition" {
+  type        = string
+  default     = null
+  description = "Optional CEL attribute condition on the WIF provider, e.g. assertion.sub==\"<zitadel_sub>\". Tokens that fail it are rejected at the STS exchange. Default null sets no condition, so existing onboardings plan no change."
+  validation {
+    condition     = var.attribute_condition == null || try(length(trimspace(var.attribute_condition)) > 0, false)
+    error_message = "attribute_condition must be null (no condition) or a non-empty CEL expression."
+  }
+}
+
 variable "eso_namespace" {
   type        = string
   default     = "external-secrets"

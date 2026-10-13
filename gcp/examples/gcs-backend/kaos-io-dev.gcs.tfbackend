@@ -1,0 +1,3 @@
+# State for the kaos-io org on the KAOS dev control plane.
+bucket = "kaos-dev-511509-tfstate"
+prefix = "onboarding/kaos-io"

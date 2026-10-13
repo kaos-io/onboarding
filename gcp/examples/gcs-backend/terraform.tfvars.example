@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+org_name             = "kaos-io"
+gcp_project_id       = "kaos-dev-511509"
+gcp_project_number   = "949829936044"
+zitadel_issuer       = "https://access.dev.kaos-labs.org"
+broker_app_client_id = "<dev broker-app clientId>"
+
+# Only the kaos-io Zitadel sub may exchange tokens at this provider.
+# The value is the module's zitadel_sub output for org_name = "kaos-io".
+attribute_condition = "assertion.sub==\"caaa8bfa-8175-575d-8c92-165b47cbf2ad\""

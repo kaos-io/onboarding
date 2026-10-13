@@ -91,6 +91,11 @@ example, `kubecoreEsoSecretWriter` gained `secretmanager.secrets.update` so Exte
 can label the secrets KAOS writes). The re-run needs `iam.roles.update`, which `onboard.sh`
 checks for.
 
+Optional: `attribute_condition` sets a CEL condition on the WIF provider, for example
+`assertion.sub=="<zitadel_sub>"` to admit only the org's own Zitadel identity. It defaults to
+no condition. State stays in a local file unless you use the GCS wrapper in
+[`examples/gcs-backend`](examples/gcs-backend/README.md).
+
 ## Parity
 `terraform output zitadel_sub` MUST equal the operator's `DeterministicUserID(org_name)`, and
 `terraform output wif_pool_id` MUST equal the operator/broker `WIFPoolName(org_name)`.

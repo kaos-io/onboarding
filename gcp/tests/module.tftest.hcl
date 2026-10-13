@@ -70,3 +70,35 @@ run "eso_writer_can_list_versions_for_ifnotexists" {
     error_message = "kubecoreEsoSecretWriter needs secretmanager.versions.list: ESO's gcpsm PushSecret checks existence for updatePolicy: IfNotExists by listing versions."
   }
 }
+
+run "wif_provider_has_no_condition_by_default" {
+  command = plan
+
+  assert {
+    condition     = google_iam_workload_identity_pool_provider.kubecore_zitadel.attribute_condition == null
+    error_message = "attribute_condition must default to null so existing onboardings plan no change."
+  }
+}
+
+run "wif_provider_applies_attribute_condition" {
+  command = plan
+
+  variables {
+    attribute_condition = "assertion.sub==\"ad262e82-8256-5e2e-899e-3d8c40832b54\""
+  }
+
+  assert {
+    condition     = google_iam_workload_identity_pool_provider.kubecore_zitadel.attribute_condition == "assertion.sub==\"ad262e82-8256-5e2e-899e-3d8c40832b54\""
+    error_message = "attribute_condition must be passed through to the WIF provider."
+  }
+}
+
+run "empty_attribute_condition_is_rejected" {
+  command = plan
+
+  variables {
+    attribute_condition = "  "
+  }
+
+  expect_failures = [var.attribute_condition]
+}
