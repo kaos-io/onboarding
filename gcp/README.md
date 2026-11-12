@@ -146,6 +146,51 @@ The grants are read-only and dataset-scoped for data; the only project-scoped gr
 `jobUser` (job creation, no data access on its own). Nothing touches the billing account or
 other datasets.
 
+## OSR Cloud Logging read path (opt-in, off by default)
+
+> **Status: opt-in (`enable_osr_cloud_logging = false` by default).** Leave it off unless
+> KAOS asks you to turn it on. With it off nothing below is created.
+
+The pool's OSR read API normally serves pipeline step logs and run events from the cluster
+itself. With this on, it can also read older ones from this project's Cloud Logging, through
+one log view and nothing else. `enable_osr_cloud_logging = true` creates:
+
+- the `logging.googleapis.com` API enablement (kept on destroy; GKE already needs it),
+- the service account `<org>-gcp-osr-sa`, with **no project-level role**,
+- the log view `<org>-osr-k8s` on this project's `_Default` log bucket (location
+  `osr_log_view_location`, default `global`), filtered to Kubernetes container
+  `stdout`/`stderr` and Kubernetes pod and cluster `events` of this project:
+
+  ```
+  SOURCE("projects/<PROJECT>") AND ((resource.type="k8s_container" AND (LOG_ID("stdout") OR LOG_ID("stderr"))) OR ((resource.type="k8s_pod" OR resource.type="k8s_cluster") AND LOG_ID("events")))
+  ```
+
+- `roles/logging.viewAccessor` for `<org>-gcp-osr-sa` on that view's own IAM policy, so it
+  reaches this view only. It is never granted `roles/logging.viewer` on the project, which
+  would expose every log in it,
+- `roles/iam.serviceAccountViewer` and the `kubecoreWorkloadIdentityBinder` role for
+  `<org>-crossplane` on `<org>-gcp-osr-sa`, so KAOS can observe the account and, after the
+  pool's cluster exists, bind it with Workload Identity to the OSR read API. The binding
+  itself is made by KAOS, not here, for the same reason as the ESO/DNS/GKE/CI bindings.
+
+Outputs: `osr_sa_email` and `osr_log_view` (the full view name,
+`projects/<PROJECT>/locations/<loc>/buckets/_Default/views/<org>-osr-k8s`). Both are empty
+when the flag is off.
+
+The read API checks its own permissions when it starts and every five minutes after. If
+`<org>-gcp-osr-sa` holds any project-level log, secret, token, exec or storage-read
+permission, it refuses to use Cloud Logging. Do not add grants to this account.
+
+Known limit: Cloud Logging cannot tell which KubeOrg a cluster belongs to before the cluster
+exists, so the view covers every GKE cluster in this project. If several KubeOrgs share the
+project, each org's account can read the others' Kubernetes container logs at the IAM level;
+the read API filters every request and re-checks every entry against the pool's own
+project, location, cluster, namespace and pod.
+
+If your `_Default` bucket is not in `global` (an organisation-wide default storage location
+can move it), set `osr_log_view_location` to its location. Check with
+`gcloud logging buckets list --project <PROJECT>`.
+
 ## Meluxina HPC SSH key (removed)
 
 This module no longer stages the Meluxina HPC SSH key. Enter the key in the KAOS console
