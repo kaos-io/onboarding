@@ -20,8 +20,6 @@ locals {
   gke_sa_email = "${var.org_name}-gcp-gke-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
   # account_id "{org}-gcp-ci-sa" = 10-char suffix; org_name <= 19 => <= 29 (GCP cap). Never truncate org_name.
   ci_sa_email = "${var.org_name}-gcp-ci-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
-  # account_id "{org}-gcp-osr-sa" = 11-char suffix; org_name <= 19 => <= 30 (GCP cap). Never truncate org_name.
-  osr_sa_email = "${var.org_name}-gcp-osr-sa@${var.gcp_project_id}.iam.gserviceaccount.com"
 
   wif_principal = "principal://iam.googleapis.com/projects/${var.gcp_project_number}/locations/global/workloadIdentityPools/${local.wif_pool_id}/subject/${local.zitadel_sub}"
 
@@ -521,109 +519,6 @@ resource "google_service_account_iam_member" "crossplane_wi_binder_gke" {
 # binder role's powers are unchanged (still just get/setIamPolicy) — only its targets grow.
 resource "google_service_account_iam_member" "crossplane_wi_binder_ci" {
   service_account_id = google_service_account.ci.name
-  role               = google_project_iam_custom_role.wi_binder.name
-  member             = "serviceAccount:${google_service_account.crossplane.email}"
-}
-
-# --- OSR Cloud Logging read path (opt-in, PRD 1533 F-52) ---
-# The pool's OSR read API falls back to this project's Cloud Logging for step logs and run
-# events that the pod and the in-cluster log store no longer hold. It reads through ONE log
-# view and nothing else (ruling A): a dedicated SA ({org}-gcp-osr-sa, invariant I1) holds
-# roles/logging.viewAccessor on the {org}-osr-k8s view only, never project-level
-# roles/logging.viewer (which would expose every log in the project). The read API's
-# startup self-check calls projects.testIamPermissions and stays dark if this SA holds any
-# of logging.logEntries.list, logging.privateLogEntries.list, secretmanager.versions.access,
-# iam.serviceAccounts.getAccessToken/actAs, container.secrets.get, container.pods.exec or
-# storage.objects.get at project level, so do not add project grants to this SA.
-#
-# Same two-step Workload Identity pattern as eso/dns/gke/ci: Terraform creates the SA and
-# lets the crossplane SA bind it (wi_binder target) and read it (serviceAccountViewer, for
-# the operator's Observe-only ServiceAccount MR); the KSA<->GSA binding itself is created
-# post-cluster by the operator's composition, because {projectId}.svc.id.goog does not
-# exist before the first GKE cluster.
-#
-# The view id is per org ({org}-osr-k8s), like the SA: two KubeOrgs can share one GCP
-# project, and a fixed id would collide on the second apply (the same problem the four
-# fixed-id custom roles have). Each org's SA can read only its own view.
-#
-# Scope residual (accepted, PRD 1533 F-52 OQ-3): the view is restricted to this project's
-# Kubernetes container stdout/stderr and Kubernetes pod/cluster events, but NOT to this
-# org's clusters. The pools' cluster names are not known at onboarding time, so another
-# KubeOrg's pool in the same GCP project is readable at the IAM level. The read API's own
-# filter and per-entry recheck (project, location, cluster, namespace, pod) are the guard.
-locals {
-  osr_log_view_id   = "${var.org_name}-osr-k8s"
-  osr_log_view_name = "projects/${var.gcp_project_id}/locations/${var.osr_log_view_location}/buckets/_Default/views/${local.osr_log_view_id}"
-  # Flexible log-view filter (it uses OR): container stdout/stderr, and the event log of
-  # pods and clusters. Every clause sits under SOURCE(this project).
-  osr_log_view_filter = join(" ", [
-    "SOURCE(\"projects/${var.gcp_project_id}\") AND",
-    "((resource.type=\"k8s_container\" AND (LOG_ID(\"stdout\") OR LOG_ID(\"stderr\"))) OR",
-    "((resource.type=\"k8s_pod\" OR resource.type=\"k8s_cluster\") AND LOG_ID(\"events\")))",
-  ])
-}
-
-# Cloud Logging API: on in every project that runs GKE with logging, but a fresh project
-# needs it before the view can be created. Never disabled on destroy.
-resource "google_project_service" "osr_logging" {
-  count              = var.enable_osr_cloud_logging ? 1 : 0
-  project            = var.gcp_project_id
-  service            = "logging.googleapis.com"
-  disable_on_destroy = false
-}
-
-resource "google_service_account" "osr" {
-  count        = var.enable_osr_cloud_logging ? 1 : 0
-  project      = var.gcp_project_id
-  account_id   = "${var.org_name}-gcp-osr-sa"
-  display_name = "OSR Cloud Logging reader SA for ${var.org_name}"
-  description  = "Read-only: roles/logging.viewAccessor on log view ${local.osr_log_view_id} only (PRD 1533 F-52). No project roles."
-  depends_on   = [google_project_service.required]
-}
-
-resource "google_logging_log_view" "osr_k8s" {
-  count       = var.enable_osr_cloud_logging ? 1 : 0
-  parent      = "projects/${var.gcp_project_id}"
-  location    = var.osr_log_view_location
-  bucket      = "_Default"
-  name        = local.osr_log_view_id
-  description = "KAOS OSR read API (org ${var.org_name}): Kubernetes container stdout/stderr and Kubernetes pod/cluster events of this project."
-  filter      = local.osr_log_view_filter
-  depends_on  = [google_project_service.osr_logging]
-}
-
-# View-level IAM: the binding lives on the view's own policy, so it reaches this view and
-# nothing else. No IAM condition is needed (a resource.name condition is only required
-# when viewAccessor is granted on the PROJECT, which this module never does).
-resource "google_logging_log_view_iam_member" "osr_view_accessor" {
-  count    = var.enable_osr_cloud_logging ? 1 : 0
-  parent   = google_logging_log_view.osr_k8s[0].parent
-  location = google_logging_log_view.osr_k8s[0].location
-  bucket   = google_logging_log_view.osr_k8s[0].bucket
-  name     = google_logging_log_view.osr_k8s[0].name
-  role     = "roles/logging.viewAccessor"
-  member   = "serviceAccount:${google_service_account.osr[0].email}"
-}
-
-# The crossplane SA must READ the osr SA to OBSERVE it (the operator tracks it with an
-# Observe-only ServiceAccount MR and turns the Cloud Logging read path on only once it is
-# Ready). Read-only, SA-scoped, non-escalating. Same rule as operator_view_eso/dns/gke.
-resource "google_service_account_iam_member" "operator_view_osr" {
-  count              = var.enable_osr_cloud_logging ? 1 : 0
-  service_account_id = google_service_account.osr[0].name
-  role               = "roles/iam.serviceAccountViewer"
-  member             = "serviceAccount:${google_service_account.crossplane.email}"
-}
-
-# Fifth wi_binder target, so the operator's composition can add the
-# roles/iam.workloadIdentityUser binding ({projectId}.svc.id.goog[<osr ns>/<osr KSA>])
-# on this SA post-cluster. The role's powers are unchanged (get/setIamPolicy). Blast
-# radius: self-impersonating the osr SA reaches read access to this project's Kubernetes
-# container logs and events, which crossplane already has through roles/container.admin
-# (pod logs on every cluster in the project); no project IAM, no other SA.
-resource "google_service_account_iam_member" "crossplane_wi_binder_osr" {
-  count              = var.enable_osr_cloud_logging ? 1 : 0
-  service_account_id = google_service_account.osr[0].name
   role               = google_project_iam_custom_role.wi_binder.name
   member             = "serviceAccount:${google_service_account.crossplane.email}"
 }
