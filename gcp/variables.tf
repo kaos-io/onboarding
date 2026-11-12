@@ -76,19 +76,3 @@ variable "billing_export_location" {
   default     = "EU"
   description = "BigQuery location for the kaos_billing_export dataset (e.g. \"EU\", \"US\", or a region). Default \"EU\" for EU data residency. The Cloud Billing export target dataset must match a location BigQuery billing export supports."
 }
-
-variable "enable_osr_cloud_logging" {
-  type        = bool
-  default     = false
-  description = "Opt in to the OSR Cloud Logging read path (PRD 1533 F-52): create the {org}-gcp-osr-sa service account, the {org}-osr-k8s log view on the _Default bucket (Kubernetes container stdout/stderr and Kubernetes events of this project only), a view-scoped roles/logging.viewAccessor grant for that SA, and the grants that let the org's Crossplane SA observe the SA and bind it to the pool's OSR read API with Workload Identity. Default false: nothing is created and the read API stays on its in-cluster sources."
-}
-
-variable "osr_log_view_location" {
-  type        = string
-  default     = "global"
-  description = "Location of this project's _Default log bucket, where the OSR log view is created. Leave \"global\" unless your organisation's default Cloud Logging storage location puts _Default elsewhere (check with: gcloud logging buckets describe _Default --location=<loc> --project <PROJECT>). Only used when enable_osr_cloud_logging is true."
-  validation {
-    condition     = can(regex("^[a-z0-9-]{1,63}$", var.osr_log_view_location))
-    error_message = "osr_log_view_location must be a Cloud Logging location id such as \"global\" or \"europe-west1\"."
-  }
-}

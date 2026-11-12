@@ -46,13 +46,3 @@ output "billing_export_dataset_id" {
   value       = var.enable_cost_export ? google_bigquery_dataset.billing_export[0].dataset_id : ""
   description = "BigQuery dataset id the in-client billing reader queries for cost actuals; empty when cost export is disabled. The system binds to this."
 }
-
-output "osr_sa_email" {
-  value       = var.enable_osr_cloud_logging ? google_service_account.osr[0].email : ""
-  description = "OSR Cloud Logging reader SA ({org}-gcp-osr-sa, PRD 1533 F-52); empty when enable_osr_cloud_logging is false. Observed by the operator and bound with Workload Identity to the pool's OSR read API."
-}
-
-output "osr_log_view" {
-  value       = var.enable_osr_cloud_logging ? local.osr_log_view_name : ""
-  description = "Full name of the OSR log view, projects/<project>/locations/<loc>/buckets/_Default/views/<org>-osr-k8s: the read API's cloudLogging \"resource\". Empty when enable_osr_cloud_logging is false."
-}

@@ -15,8 +15,3 @@ zitadel_issuer       = "https://access.platform.kaos-labs.org"
 #   terraform apply -var-file=terraform.tfvars -var="github_app_private_key=$(cat ./app.pem)"
 github_app_id          = ""
 # github_app_private_key supplied via -var at apply time, NOT here.
-
-# Optional — OSR Cloud Logging read path (PRD 1533 F-52). Off by default; turn on only
-# when KAOS asks. Creates {org}-gcp-osr-sa and the {org}-osr-k8s log view (see README).
-# enable_osr_cloud_logging = false
-# osr_log_view_location    = "global"
